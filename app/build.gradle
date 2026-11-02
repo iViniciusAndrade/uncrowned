@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.uncrownedlabs.uncrowned'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.uncrownedlabs.uncrowned'
+        minSdk 26
+        targetSdk 34
+        versionCode (System.getenv('GITHUB_RUN_NUMBER') ? System.getenv('GITHUB_RUN_NUMBER').toInteger() : 1)
+        versionName '1.0.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
+    }
+
+    signingConfigs {
+        release {
+            // a chave vem dos segredos do GitHub (ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD), nunca do repositório
+            storeFile file(System.getenv('UC_KEYSTORE') ?: 'release.jks')
+            storePassword System.getenv('UC_KEYSTORE_PASSWORD') ?: ''
+            keyAlias System.getenv('UC_KEY_ALIAS') ?: 'uncrowned'
+            keyPassword System.getenv('UC_KEYSTORE_PASSWORD') ?: ''
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'
+}
