@@ -332,27 +332,27 @@
     return `<div class="row between"><button class="icon-btn" type="button" data-act="food-day" data-arg="-1" aria-label="Dia anterior"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><h2>${dateLabel(k)}</h2><button class="icon-btn" type="button" data-act="food-day" data-arg="1" aria-label="Próximo dia" ${k >= Store.dkey() ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>
     <div class="card"><div class="row" style="gap:14px">${ring(t.kcal, g.kcal + (d.kcalOut || 0), 112, fmt(t.kcal), 'de ' + fmt(g.kcal + (d.kcalOut || 0)))}<div class="stack" style="flex:1;gap:8px">
       ${[['Proteína', t.p, g.prot], ['Carboidrato', t.c, g.carb], ['Gordura', t.g, g.fat], ['Fibra', t.f, g.fiber]].map(([l, v, m]) => `<div><div class="row between tiny"><span>${l}</span><span class="num mute">${fmt(v)} / ${m} g</span></div>${bar(v, m)}</div>`).join('')}</div></div>
-      <div class="grid3"><button class="btn sm" type="button" data-act="food-add" data-arg="">Buscar</button><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="mic-ask" data-arg="Diga o que comeu. Ex.: no almoço comi arroz, feijão e um bife">Falar</button></div></div>
+      <div class="grid2"><button class="btn sm" type="button" data-act="food-add" data-arg="">Buscar</button><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button><button class="btn sm" type="button" data-act="mic-ask" data-arg="Diga o que comeu. Ex.: no almoço comi arroz, feijão e um bife">Falar</button></div></div>
     ${sections}
     <div class="row wrap"><button class="btn sm ghost" type="button" data-act="custom-new">Criar alimento</button><button class="btn sm ghost" type="button" data-act="my-foods">Meus alimentos e favoritos</button></div>
     <p class="tiny mute">Valores de alimentos naturais: TACO 4ª ed. (NEPA/UNICAMP). Pratos genéricos sem marca: IBGE, POF 2008-2009. Medidas caseiras: IBGE, POF 2008-2009. Produtos de marca: Open Food Facts e o rótulo informado por você.</p>`;
   }
-  let fs = { meal: '', q: '', remote: [], loading: false, timer: null, seq: 0 };
+  let fs = { meal: '', q: '', remote: [], loading: false, timer: null, seq: 0, err: false };
   function foodSearch(meal, q) {
     fs = { meal: meal || mealNow(), q: q || '', remote: [], loading: false, timer: null, seq: 0 };
     App.sheet(`<div class="row between"><h2>Adicionar</h2><select class="input" id="fs-meal" style="width:auto;min-height:40px;padding:6px 10px" aria-label="Refeição">${MEALS.map(([m, l]) => `<option value="${m}" ${fs.meal === m ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <input class="input" id="fs-q" placeholder="Ex.: peito de frango, sassami Swift" autocomplete="off" value="${esc(fs.q)}" aria-label="Buscar alimento">
-      <div class="row wrap"><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm ghost" type="button" data-act="custom-new">Criar alimento</button></div>
+      <div class="row wrap"><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button><button class="btn sm ghost" type="button" data-act="custom-new">Criar alimento</button></div>
       <div id="fs-res"></div>`);
     const inp = $('#fs-q'); inp.focus();
-    inp.oninput = () => { fs.q = inp.value; fs.remote = []; renderFS(); clearTimeout(fs.timer); if (Food.norm(fs.q).length >= 3) fs.timer = setTimeout(online, 450); };
+    inp.oninput = () => { fs.q = inp.value; fs.remote = []; fs.err = false; fs.seq++; fs.loading = Food.norm(fs.q).length >= 3; renderFS(); clearTimeout(fs.timer); if (fs.loading) fs.timer = setTimeout(online, 650); };
     $('#fs-meal').onchange = e => fs.meal = e.target.value;
     renderFS(); if (Food.norm(fs.q).length >= 3) online();
   }
   async function online() {
     const my = ++fs.seq, q = fs.q; fs.loading = true; renderFS();
-    try { const r = await Food.searchOnline(q); if (my !== fs.seq) return; fs.remote = r; }
-    catch (e) { if (my === fs.seq) fs.remote = []; }
+    try { const r = await Food.searchOnline(q); if (my !== fs.seq) return; fs.remote = r; fs.err = false; }
+    catch (e) { if (my === fs.seq) { fs.remote = []; fs.err = true; } }
     if (my === fs.seq) { fs.loading = false; renderFS(); }
   }
   function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · TACO' : f.src === 'IBGE' ? 'Genérico · IBGE' : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
@@ -368,7 +368,7 @@
     const nat = local.filter(f => f.src === 'TACO' || f.src === 'IBGE'), mine = local.filter(f => f.src !== 'TACO' && f.src !== 'IBGE');
     el.innerHTML = (nat.length ? `<span class="lbl">Naturais e genéricos (sem marca)</span><div class="list">${nat.slice(0, 14).map(foodRow).join('')}</div>` : '') +
       `<span class="lbl">Marcas</span><div class="list">${mine.map(foodRow).join('')}${fs.remote.map(f => { App._remote = App._remote || {}; App._remote[f.ref] = f; return foodRow(f); }).join('')}</div>` +
-      (fs.loading ? '<p class="empty">Buscando marcas na internet…</p>' : (!mine.length && !fs.remote.length ? `<p class="empty">Nenhuma marca encontrada${UCBridge.native ? '' : ' (sem internet?)'}.</p>` : '')) +
+      (fs.loading ? '<p class="empty">Buscando marcas na internet…</p>' : (!mine.length && !fs.remote.length ? (fs.err ? '<p class="empty">A busca de marcas (Open Food Facts) não respondeu agora. <a href="#" data-act="fs-retry">Tentar de novo</a>, ou use o código de barras ou a foto da tabela.</p>' : '<p class="empty">Nenhuma marca encontrada com esse nome. Tente o código de barras ou a foto da tabela.</p>') : '')) +
       (!nat.length && !mine.length && !fs.remote.length && !fs.loading ? `<button class="btn block" type="button" data-act="custom-new" data-arg="${esc(fs.q)}">Criar “${esc(fs.q)}” manualmente</button>` : '');
   }
   function mealNow() { const h = new Date().getHours() + new Date().getMinutes() / 60; return h < 10.5 ? 'cafe' : h < 15 ? 'almoco' : h < 18.5 ? 'lanche' : h < 22.5 ? 'jantar' : 'ceia'; }
@@ -379,14 +379,15 @@
     const meas = Food.measures(f);
     let grams = existing ? existing.grams : (meas.find(m => m.label === 'unidade') || meas[0] || { g: 100 }).g;
     let label = existing ? existing.label : '';
-    const fav = S().fav.includes(f.ref);
+    const fav = S().fav.includes(f.ref), un = f.unit === 'ml' ? 'ml' : 'g', branded = f.src !== 'TACO' && f.src !== 'IBGE';
     App.sheet(`<span class="lbl">${esc(f.src === 'TACO' ? 'Natural · TACO' : f.src === 'IBGE' ? 'Genérico sem marca · IBGE POF 2008-2009' : f.src)}${f.brand ? ' · ' + esc(f.brand) : ''}</span><h2>${esc(f.name)}</h2>
-      <div class="chips">${meas.map((m, i) => `<button type="button" class="chip" data-m="${i}">${esc(m.label)} · ${fmt(m.g)} g</button>`).join('')}<button type="button" class="chip" data-g="100">100 g</button></div>
-      <div class="grid2"><div class="field"><label for="pt-q">Quantidade</label><input class="input" id="pt-q" inputmode="decimal" value="1"></div><div class="field"><label for="pt-g">Gramas</label><input class="input" id="pt-g" inputmode="decimal" value="${fmt(grams, 1).replace('.', '')}"></div></div>
+      <div class="chips">${meas.map((m, i) => `<button type="button" class="chip" data-m="${i}">${esc(m.label)} · ${fmt(m.g)} g</button>`).join('')}<button type="button" class="chip" data-g="100">100 ${un}</button></div>
+      <div class="grid2"><div class="field"><label for="pt-q">Quantidade</label><input class="input" id="pt-q" inputmode="decimal" value="1"></div><div class="field"><label for="pt-g">${un === 'ml' ? 'Mililitros' : 'Gramas'}</label><input class="input" id="pt-g" inputmode="decimal" value="${fmt(grams, 1).replace('.', '')}"></div></div>
       <div class="card tight"><div class="row between"><span class="big" id="pt-kcal">0</span><span class="mute">kcal</span></div><div class="macros small" id="pt-mac"></div></div>
       <div class="field"><label for="pt-meal">Refeição</label><select class="input" id="pt-meal">${MEALS.map(([m, l]) => `<option value="${m}" ${(existing ? existing.meal : meal) === m ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="grid2"><button class="btn" type="button" id="pt-fav">${fav ? 'Tirar dos favoritos' : 'Favoritar'}</button><button class="btn pri" type="button" id="pt-ok">${existing ? 'Salvar' : 'Adicionar'}</button></div>
-      ${existing ? '<button class="btn danger block" type="button" id="pt-del">Remover</button>' : ''}<p class="tiny mute">Por 100 g: ${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} · C ${fmt(f.c, 1)} · G ${fmt(f.g, 1)}${f.f != null ? ' · fibra ' + fmt(f.f, 1) : ''}${f.na != null ? ' · sódio ' + fmt(f.na) + ' mg' : ''}</p>`);
+      ${existing ? '<button class="btn danger block" type="button" id="pt-del">Remover</button>' : ''}<p class="tiny mute">Por 100 ${un}: ${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} · C ${fmt(f.c, 1)} · G ${fmt(f.g, 1)}${f.f != null ? ' · fibra ' + fmt(f.f, 1) : ''}${f.na != null ? ' · sódio ' + fmt(f.na) + ' mg' : ''}</p>
+      ${branded ? `<div class="card tight"><span class="lbl">${f.src === 'Open Food Facts' ? 'Dados da internet podem ter erro' : 'Valores do rótulo'}</span><p class="tiny mute">${f.src === 'Open Food Facts' ? 'Esses números vêm do Open Food Facts, preenchido por voluntários. Confira com a tabela da embalagem.' : 'Se algum número estiver diferente da embalagem, corrija aqui.'}</p><div class="grid2"><button class="btn sm" type="button" id="pt-photo">Conferir com foto</button><button class="btn sm ghost" type="button" id="pt-edit">Editar valores</button></div></div>` : ''}`);
     let unitG = null;
     const upd = () => { const c = Food.calc(f, grams); $('#pt-kcal').textContent = fmt(c.kcal); $('#pt-mac').innerHTML = `<div class="macro"><span class="mute tiny">Proteína</span><div class="v">${fmt(c.p, 1)} g</div></div><div class="macro"><span class="mute tiny">Carbo</span><div class="v">${fmt(c.c, 1)} g</div></div><div class="macro"><span class="mute tiny">Gordura</span><div class="v">${fmt(c.g, 1)} g</div></div>`; };
     const num = v => parseFloat(String(v).replace(',', '.')) || 0;
@@ -401,28 +402,74 @@
       else day.meals.push(Food.entry(f, grams, m, label));
       Food.touchRecent(f.ref); Store.save(); App.closeSheet(); App.render(); App.toast((existing ? 'Atualizado: ' : 'Adicionado: ') + f.name.split(',')[0]);
     };
+    const pre = () => ({ ref: f.ref, name: f.name, brand: f.brand, barcode: f.barcode, unit: f.unit, vals: { kcal: f.kcal, p: f.p, c: f.c, g: f.g, f: f.f, na: f.na }, measures: f.measures, meal: $('#pt-meal').value, fix: true });
+    const ph = $('#pt-photo'); if (ph) ph.onclick = () => photoLabel(pre());
+    const ed = $('#pt-edit'); if (ed) ed.onclick = () => customForm(pre());
     const del = $('#pt-del'); if (del) del.onclick = () => { const day = Store.day(App.foodDate || Store.dkey()); day.meals = day.meals.filter(x => x.id !== existing.id); Store.save(); App.closeSheet(); App.render(); };
     upd();
   }
-  function customForm(name, barcode) {
-    App.sheet(`<h2>Criar alimento</h2><p class="small mute">Copie do rótulo. Os valores podem ser por 100 g ou por porção.</p>
-      <div class="field"><label for="cf-n">Nome</label><input class="input" id="cf-n" value="${esc(name || '')}"></div>
-      <div class="grid2"><div class="field"><label for="cf-b">Marca</label><input class="input" id="cf-b"></div><div class="field"><label for="cf-code">Código de barras</label><input class="input" id="cf-code" inputmode="numeric" value="${esc(barcode || '')}"></div></div>
-      <div class="field"><label>Valores informados por</label><div class="seg" id="cf-base"><button type="button" class="on" data-v="100">100 g</button><button type="button" data-v="porcao">Porção</button></div></div>
-      <div class="field" id="cf-pg-w" style="display:none"><label for="cf-pg">Porção do rótulo (g ou ml)</label><input class="input" id="cf-pg" inputmode="decimal"></div>
-      <div class="grid2"><div class="field"><label for="cf-k">Calorias (kcal)</label><input class="input" id="cf-k" inputmode="decimal"></div><div class="field"><label for="cf-p">Proteína (g)</label><input class="input" id="cf-p" inputmode="decimal"></div><div class="field"><label for="cf-c">Carboidrato (g)</label><input class="input" id="cf-c" inputmode="decimal"></div><div class="field"><label for="cf-g">Gordura (g)</label><input class="input" id="cf-g" inputmode="decimal"></div><div class="field"><label for="cf-f">Fibra (g)</label><input class="input" id="cf-f" inputmode="decimal"></div><div class="field"><label for="cf-na">Sódio (mg)</label><input class="input" id="cf-na" inputmode="decimal"></div></div>
-      <button class="btn pri block" type="button" id="cf-ok">Salvar alimento</button>`);
-    let base = '100';
-    $('#cf-base').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; base = b.dataset.v; $$('#cf-base button').forEach(x => x.classList.toggle('on', x === b)); $('#cf-pg-w').style.display = base === '100' ? 'none' : ''; };
+  // formulário do alimento. o: { name, brand, barcode, ref, unit, vals, portion, measures, warn, missing, fix, meal, fromPhoto }
+  function customForm(o, barcode) {
+    if (typeof o !== 'object' || !o) o = { name: o || '', barcode: barcode || '' };
+    const v = o.vals || {}, miss = o.missing || [], un = o.unit === 'ml' ? 'ml' : 'g';
+    const val = k => v[k] == null ? '' : String(v[k]).replace('.', ',');
+    const fld = (id, k, l) => `<div class="field"><label for="cf-${id}">${l}</label><input class="input ${miss.includes(k) ? 'bad' : ''}" id="cf-${id}" inputmode="decimal" value="${esc(val(k))}" placeholder="${miss.includes(k) ? 'confira' : ''}"></div>`;
+    App.sheet(`<h2>${o.fix ? 'Corrigir com o rótulo' : o.fromPhoto ? 'Confira a tabela' : 'Criar alimento'}</h2>
+      <p class="small mute">${o.fromPhoto ? 'Li a foto e preenchi abaixo. Compare com a embalagem e corrija o que estiver diferente.' : 'Copie do rótulo. Os valores podem ser por 100 g ou por porção.'}</p>
+      ${(o.warn || []).map(w => `<div class="note">${esc(w)}</div>`).join('')}
+      <div class="field"><label for="cf-n">Nome</label><input class="input ${o.fromPhoto && !o.name ? 'bad' : ''}" id="cf-n" value="${esc(o.name || '')}" placeholder="${o.fromPhoto ? 'Ex.: Suco Yaí maçã verde zero' : ''}"></div>
+      <div class="grid2"><div class="field"><label for="cf-b">Marca</label><input class="input" id="cf-b" value="${esc(o.brand || '')}"></div><div class="field"><label for="cf-code">Código de barras</label><input class="input" id="cf-code" inputmode="numeric" value="${esc(o.barcode || '')}"></div></div>
+      <div class="field"><label>Unidade</label><div class="seg" id="cf-unit"><button type="button" class="${un === 'g' ? 'on' : ''}" data-v="g">Sólido (g)</button><button type="button" class="${un === 'ml' ? 'on' : ''}" data-v="ml">Líquido (ml)</button></div></div>
+      <div class="field"><label>Valores informados por</label><div class="seg" id="cf-base"><button type="button" class="on" data-v="100">100 <span class="cf-u">${un}</span></button><button type="button" data-v="porcao">Porção</button></div></div>
+      <div class="field" id="cf-pg-w"><label for="cf-pg">Porção do rótulo (<span class="cf-u">${un}</span>)</label><input class="input" id="cf-pg" inputmode="decimal" value="${esc(o.portion ? String(o.portion).replace('.', ',') : '')}" placeholder="opcional"></div>
+      <div class="grid2">${fld('k', 'kcal', 'Calorias (kcal)')}${fld('p', 'p', 'Proteína (g)')}${fld('c', 'c', 'Carboidrato (g)')}${fld('g', 'g', 'Gordura (g)')}${fld('f', 'f', 'Fibra (g)')}${fld('na', 'na', 'Sódio (mg)')}</div>
+      ${o.fromPhoto || o.fix ? '<div class="grid2"><button class="btn sm ghost" type="button" id="cf-again">Tirar outra foto</button><span></span></div>' : ''}
+      <button class="btn pri block" type="button" id="cf-ok">${o.fix ? 'Salvar correção' : 'Salvar e informar quanto comi'}</button>`);
+    let base = '100', unit = un;
+    $('#cf-base').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; base = b.dataset.v; $$('#cf-base button').forEach(x => x.classList.toggle('on', x === b)); $('#cf-pg').placeholder = base === '100' ? 'opcional' : 'obrigatório'; };
+    $('#cf-unit').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; unit = b.dataset.v; $$('#cf-unit button').forEach(x => x.classList.toggle('on', x === b)); $$('#sheet-content .cf-u').forEach(x => x.textContent = unit); };
+    const ag = $('#cf-again'); if (ag) ag.onclick = () => photoLabel(Object.assign({}, o, { name: $('#cf-n').value.trim(), brand: $('#cf-b').value.trim(), barcode: $('#cf-code').value.trim() }));
+    $$('#sheet-content .input.bad').forEach(x => x.addEventListener('input', () => x.classList.remove('bad'), { once: true }));
     $('#cf-ok').onclick = () => {
-      const v = id => { const x = parseFloat(($(id).value || '').replace(',', '.')); return isNaN(x) ? null : x; };
-      const n = $('#cf-n').value.trim(); if (!n) return App.toast('Dê um nome ao alimento');
-      if (v('#cf-k') == null) return App.toast('Informe as calorias');
-      let k = 1, meas = [];
-      if (base === 'porcao') { const pg = v('#cf-pg'); if (!pg) return App.toast('Informe o tamanho da porção'); k = 100 / pg; meas = [{ label: 'porção', g: pg }]; }
-      const f = Food.addCustom({ name: n, brand: $('#cf-b').value.trim(), barcode: $('#cf-code').value.trim() || null, kcal: Math.round(v('#cf-k') * k), p: (v('#cf-p') || 0) * k, c: (v('#cf-c') || 0) * k, g: (v('#cf-g') || 0) * k, f: v('#cf-f') != null ? v('#cf-f') * k : null, na: v('#cf-na') != null ? Math.round(v('#cf-na') * k) : null, measures: meas, src: 'Manual' });
-      App.toast('Alimento salvo'); portion(f.ref, fs.meal || mealNow());
+      const g = id => { const x = parseFloat(($(id).value || '').replace(',', '.')); return isNaN(x) ? null : x; };
+      const n = $('#cf-n').value.trim(); if (!n) { $('#cf-n').classList.add('bad'); $('#cf-n').focus(); return App.toast('Dê um nome ao alimento'); }
+      if (g('#cf-k') == null) return App.toast('Informe as calorias');
+      const pg = g('#cf-pg');
+      let k = 1;
+      if (base === 'porcao') { if (!pg) return App.toast('Informe o tamanho da porção'); k = 100 / pg; }
+      const meas = (o.measures || []).filter(m => !/^porção/.test(m.label));
+      if (pg) meas.unshift({ label: 'porção do rótulo (' + fmt(pg, 1) + ' ' + unit + ')', g: pg });
+      const f = Food.addCustom({ ref: o.ref, name: n, brand: $('#cf-b').value.trim(), barcode: $('#cf-code').value.trim() || null, kcal: Math.round(g('#cf-k') * k * 10) / 10, p: (g('#cf-p') || 0) * k, c: (g('#cf-c') || 0) * k, g: (g('#cf-g') || 0) * k, f: g('#cf-f') != null ? g('#cf-f') * k : null, na: g('#cf-na') != null ? Math.round(g('#cf-na') * k) : null, measures: meas, src: o.fromPhoto || o.fix ? 'Rótulo' : 'Manual', cat: 'Industrializados' });
+      f.unit = unit; Store.save();
+      App.toast(o.fix ? 'Corrigido com o rótulo' : 'Alimento salvo'); portion(f.ref, o.meal || fs.meal || mealNow());
     };
+  }
+  // foto da tabela nutricional → leitura no celular → formulário já preenchido
+  function photoLabel(pre) {
+    pre = pre || {};
+    if (!UCBridge.native) return App.toast('A foto da tabela só funciona no app Android');
+    App.sheet(`<h2>Foto da tabela nutricional</h2><p class="small ink2">Enquadre só a tabela, o mais reta possível e com boa luz. Depois você confere os números e diz quanto comeu.</p>
+      <div class="grid2"><button class="btn pri" type="button" id="pl-cam">Tirar foto</button><button class="btn" type="button" id="pl-gal">Da galeria</button></div><div id="pl-st"></div>`);
+    const go = async src => {
+      $('#pl-st').innerHTML = '<p class="empty">Lendo a tabela…</p>';
+      try {
+        const ocr = await UCBridge.readLabel(src);
+        const r = Label.parse(ocr);
+        if (!r || !r.ok) { $('#pl-st').innerHTML = '<div class="note warn">Não consegui ler a tabela nessa foto. Tente mais perto, reta e sem reflexo, ou preencha na mão.</div><button class="btn ghost block" type="button" id="pl-man">Preencher na mão</button>'; $('#pl-man').onclick = () => customForm(Object.assign({}, pre, { fromPhoto: true })); return; }
+        const vals = Object.assign({}, pre.vals || {}, r.per100), keys = ['kcal', 'p', 'c', 'g', 'f', 'na'];
+        const missing = keys.filter(k => r.per100[k] == null);
+        const diff = pre.vals ? keys.filter(k => r.per100[k] != null && pre.vals[k] != null && Math.abs(r.per100[k] - pre.vals[k]) > Math.max(0.5, Math.abs(pre.vals[k]) * 0.1)) : [];
+        const L = { kcal: 'calorias', p: 'proteína', c: 'carboidrato', g: 'gordura', f: 'fibra', na: 'sódio' };
+        const warn = r.warn.slice();
+        if (diff.length) warn.unshift('A foto mostra valores diferentes dos que estavam salvos em: ' + diff.map(k => L[k] + ' (' + fmt(pre.vals[k], 1) + ' → ' + fmt(r.per100[k], 1) + ')').join(', ') + '.');
+        if (missing.length) warn.push('Não li: ' + missing.map(k => L[k]).join(', ') + '. Preencha ou deixe vazio se a tabela não tiver.');
+        customForm(Object.assign({}, pre, { vals, missing, portion: r.portion || pre.portion, unit: r.unit || pre.unit, warn, fromPhoto: true }));
+      } catch (e) {
+        const m = String(e.message || e);
+        $('#pl-st').innerHTML = m === 'cancelado' ? '' : `<div class="note warn">${esc(m)}</div>`;
+      }
+    };
+    $('#pl-cam').onclick = () => go('camera'); $('#pl-gal').onclick = () => go('gallery');
   }
   async function scan() {
     try {
@@ -661,6 +708,8 @@
       case 'pick': portion(arg, fs.meal || mealNow()); break;
       case 'entry': { const d = Store.day(App.foodDate || Store.dkey()); const en = d.meals.find(x => x.id === arg); if (en) portion(en.ref, en.meal, en); break; }
       case 'scan': scan(); break;
+      case 'photo-label': photoLabel({ meal: fs.meal || mealNow() }); break;
+      case 'fs-retry': e.preventDefault(); fs.err = false; online(); break;
       case 'custom-new': customForm(arg || ''); break;
       case 'my-foods': myFoods(); break;
       case 'mic-ask': voiceOpen(arg); break;

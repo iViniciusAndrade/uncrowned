@@ -171,6 +171,12 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        if (LabelReader.onResult(this, req, res, data)) return;
+        super.onActivityResult(req, res, data);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         if (web != null) web.evaluateJavascript("window.UCBridge&&UCBridge._emit('intent','{}')", null);

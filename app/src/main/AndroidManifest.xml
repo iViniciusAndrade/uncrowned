@@ -69,6 +69,12 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <provider
+            android:name=".PhotoProvider"
+            android:authorities="com.uncrownedlabs.uncrowned.photos"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="barcode_ui" />

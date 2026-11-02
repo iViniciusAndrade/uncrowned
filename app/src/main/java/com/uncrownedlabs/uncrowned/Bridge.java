@@ -228,6 +228,11 @@ public class Bridge {
     }
     static String json(String k, String v) { try { return new JSONObject().put(k, v).toString(); } catch (Exception e) { return "{}"; } }
 
+    // ---------- foto da tabela nutricional ----------
+    @JavascriptInterface public void readLabel(String id, String source) {
+        ui.post(() -> LabelReader.start(a, id, source));
+    }
+
     // ---------- rede ----------
     @JavascriptInterface public void httpGet(String id, String url) {
         new Thread(() -> {

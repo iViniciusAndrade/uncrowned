@@ -51,6 +51,7 @@
     requestPermission(kind) { if (N && N.requestPermission) { try { N.requestPermission(kind); return true; } catch (e) {} } return false; },
 
     scanBarcode() { return call('scanBarcode'); },
+    readLabel(source) { return call('readLabel', source || 'camera'); },
     httpGet(url) {
       if (N && N.httpGet) return call('httpGet', url);
       return fetch(url).then(r => r.text());

@@ -38,13 +38,17 @@
     const toks = n.split(' ').filter(t => t && !STOP[t]);
     if (!toks.length) return [];
     const out = [];
-    const syn = SYNR.find(s => s[0] === n) || SYNR.find(s => n.startsWith(s[0] + ' ') || s[0].startsWith(n));
+    // "frito" acha "frita", "ovos" acha "ovo": compara pelo radical
+    const stem = t => t.length > 4 ? t.replace(/(oes|aes|ais|eis)$/, 'o').replace(/s$/, '').replace(/[aoe]$/, '') : t.length > 3 ? t.replace(/s$/, '') : t;
+    const stoks = toks.map(stem);
+    const synAll = SYNR.find(s => s[0] === n);
+    const synPre = synAll || SYNR.find(s => n.startsWith(s[0] + ' ') || (s[0].startsWith(n) && n.length >= 3));
     all().forEach(f => {
       const key = f.key || norm(f.name);
       let sc = 0;
-      for (const t of toks) { const i = key.indexOf(t); if (i < 0) { sc = -1; break; } sc += i === 0 ? 30 : (key[i - 1] === ' ' || key[i - 1] === ',') ? 18 : 6; }
+      for (let j = 0; j < toks.length; j++) { const t = toks[j]; let i = key.indexOf(t); let w = 1; if (i < 0) { i = key.indexOf(stoks[j]); w = 0.8; } if (i < 0) { sc = -1; break; } sc += (i === 0 ? 30 : (key[i - 1] === ' ' || key[i - 1] === ',') ? 18 : 6) * w; }
       if (sc < 0) return;
-      if (syn && syn[1] === f.ref) sc += 100;
+      if (synPre && synPre[1] === f.ref) sc += synAll ? 100 : 20;
       if (Store.S.fav.includes(f.ref)) sc += 25;
       if (Store.S.recent.includes(f.ref)) sc += 10;
       if (f.src === 'TACO' || f.src === 'IBGE') sc += 15; // natural e genérico primeiro
@@ -53,6 +57,9 @@
     });
     out.sort((a, b) => b[0] - a[0]);
     const res = out.slice(0, limit || 40).map(x => x[1]);
+    // sinônimo só entra na frente quando a pessoa digitou exatamente ele (ex.: "frango" → peito grelhado);
+    // em "frango frito" ou "pizza de frango" ele só aparece se não houver nada melhor
+    const syn = synAll || (!res.length && synPre);
     if (syn) { const sf = get(syn[1]); if (sf && !res.includes(sf)) res.unshift(sf); }
     return res.slice(0, limit || 40);
   }
@@ -103,12 +110,32 @@
     if (kcal == null || !(p.product_name_pt || p.product_name)) return null;
     return { ref: 'o:' + p.code, name: (p.product_name_pt || p.product_name).trim(), brand: (p.brands || '').split(',')[0].trim(), kcal: Math.round(kcal), p: round(n.proteins_100g), c: round(n.carbohydrates_100g), g: round(n.fat_100g), f: n.fiber_100g != null ? round(n.fiber_100g) : null, na: n.sodium_100g != null ? Math.round(n.sodium_100g * 1000) : null, src: 'Open Food Facts', barcode: p.code, measures: p.serving_quantity ? [{ label: 'porção do rótulo' + (p.serving_size ? ' (' + p.serving_size + ')' : ''), g: +p.serving_quantity }] : [], cat: 'Industrializados', remote: true };
   }
+  const F = 'code,product_name,product_name_pt,brands,nutriments,serving_quantity,serving_size';
+  const cacheQ = {};
+  async function getJson(url) { const raw = await UCBridge.httpGet(url); const j = typeof raw === 'string' ? JSON.parse(raw) : raw; if (!j || typeof j !== 'object') throw new Error('resposta inválida'); return j; }
+  const fix = p => Object.assign({}, p, { brands: Array.isArray(p.brands) ? p.brands.join(',') : p.brands, product_name: typeof p.product_name === 'object' && p.product_name ? (p.product_name.pt || p.product_name.main || Object.values(p.product_name)[0]) : p.product_name });
+  // busca nova do Open Food Facts (search-a-licious); a antiga (cgi/search.pl) fica de reserva porque cai muito e tem limite de pedidos
   async function searchOnline(q) {
-    const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) + '&search_simple=1&action=process&json=1&page_size=15&tagtype_0=countries&tag_contains_0=contains&tag_0=brazil&fields=code,product_name,product_name_pt,brands,nutriments,serving_quantity,serving_size';
-    const raw = await UCBridge.httpGet(url);
-    const j = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return ((j && j.products) || []).map(offToFood).filter(Boolean).filter(f => !Store.S.custom[f.ref]);
+    const key = norm(q); if (cacheQ[key]) return cacheQ[key].filter(f => !Store.S.custom[f.ref]);
+    const tries = [
+      () => getJson('https://search.openfoodfacts.org/search?q=' + encodeURIComponent(q + ' countries_tags:"en:brazil"') + '&langs=pt&page_size=20&fields=' + F).then(j => j.hits),
+      () => getJson('https://search.openfoodfacts.org/search?q=' + encodeURIComponent(q) + '&langs=pt&page_size=20&fields=' + F).then(j => j.hits),
+      () => getJson('https://br.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) + '&search_simple=1&action=process&json=1&page_size=20&fields=' + F).then(j => j.products)
+    ];
+    let lastErr = null;
+    for (const t of tries) {
+      try {
+        const list = await t();
+        if (!Array.isArray(list)) throw new Error('resposta inválida');
+        const res = list.map(fix).map(offToFood).filter(Boolean);
+        if (res.length) { cacheQ[key] = res; return res.filter(f => !Store.S.custom[f.ref]); }
+      } catch (e) { lastErr = e; }
+    }
+    if (lastErr) throw lastErr;
+    cacheQ[key] = []; return [];
   }
   function saveRemote(f) { if (Store.S.custom[f.ref]) return Store.S.custom[f.ref]; const o = Object.assign({}, f); delete o.remote; return addCustom(o); }
-  window.Food = { norm, T, get, search, guess, measures, calc, entry, touchRecent, addCustom, lookupBarcode, byBarcode, SYNR, searchOnline, saveRemote };
+  // corrige (ou cria) um produto com os valores do rótulo. Mantém o mesmo ref/código para o scanner achar depois.
+  function fromLabel(o) { return addCustom(Object.assign({ src: 'Rótulo', cat: 'Industrializados' }, o)); }
+  window.Food = { fromLabel, norm, T, get, search, guess, measures, calc, entry, touchRecent, addCustom, lookupBarcode, byBarcode, SYNR, searchOnline, saveRemote };
 })();
