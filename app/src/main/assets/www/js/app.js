@@ -14,8 +14,18 @@
 
   // ---------- utilitários de interface ----------
   App.toast = (t, ms) => { const el = $('#toast'); el.textContent = t; el.classList.add('show'); clearTimeout(App._tt); App._tt = setTimeout(() => el.classList.remove('show'), ms || 2200); };
-  App.sheet = html => { $('#sheet-content').innerHTML = html; const s = $('#sheet'); s.classList.add('open'); s.setAttribute('aria-hidden', 'false'); };
-  App.closeSheet = () => { const s = $('#sheet'); s.classList.remove('open'); s.setAttribute('aria-hidden', 'true'); $('#sheet-content').innerHTML = ''; if (App._sheetClose) { const f = App._sheetClose; App._sheetClose = null; f(); } };
+  // Janelas de baixo (sheets). App.sheet abre do zero; App.pushSheet abre por cima e o "Voltar" retorna à anterior.
+  App._sheetStack = [];
+  App.sheet = html => { App._sheetStack = []; showSheet(html); };
+  App.pushSheet = (html, restore) => { const s = $('#sheet'); if (s.classList.contains('open')) App._sheetStack.push({ html: $('#sheet-content').innerHTML, restore, top: $('#sheet .sheet-body').scrollTop }); showSheet(html); };
+  function showSheet(html) { $('#sheet-content').innerHTML = html; const s = $('#sheet'); s.classList.add('open'); s.setAttribute('aria-hidden', 'false'); $('#sheet .sheet-body').scrollTop = 0; }
+  App.closeSheet = () => { App._sheetStack = []; const s = $('#sheet'); s.classList.remove('open'); s.setAttribute('aria-hidden', 'true'); $('#sheet-content').innerHTML = ''; if (App._sheetClose) { const f = App._sheetClose; App._sheetClose = null; f(); } };
+  App.sheetBack = () => {
+    const prev = App._sheetStack.pop();
+    if (!prev) return App.closeSheet();
+    $('#sheet-content').innerHTML = prev.html; $('#sheet .sheet-body').scrollTop = prev.top || 0;
+    if (prev.restore) prev.restore(); else thumbs();
+  };
   function ring(val, max, size, label, sub) {
     const r = (size - 14) / 2, c = 2 * Math.PI * r, pct = max ? Math.min(1, val / max) : 0, over = max && val > max;
     return `<div class="ring" style="width:${size}px;height:${size}px"><svg viewBox="0 0 ${size} ${size}" style="width:${size}px;height:${size}px"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="#1d1d1d" stroke-width="10" fill="none"/><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="${over ? '#ff5a4e' : '#4ef08a'}" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${c * pct} ${c}" ${pct ? '' : 'opacity="0"'}/></svg><div class="c"><b class="num" style="font-size:${size > 120 ? 1.7 : 1.1}rem;letter-spacing:-.02em">${label}</b><span class="tiny mute">${sub || ''}</span></div></div>`;
@@ -26,9 +36,17 @@
   const greet = () => { const h = new Date().getHours(); return h < 5 ? 'Boa madrugada' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; };
 
   // ---------- navegação ----------
-  App.go = (tab, sub) => { App.tab = tab; if (sub) App.sub[tab] = sub; App.render(); $('#view').scrollTop = 0; };
+  App.hist = [];
+  const snap = () => ({ tab: App.tab, sub: App.sub.treino, prog: App.progOpen || null, y: $('#view').scrollTop });
+  App.remember = () => { const c = snap(), l = App.hist[App.hist.length - 1]; if (!l || l.tab !== c.tab || l.sub !== c.sub || l.prog !== c.prog) App.hist.push(c); if (App.hist.length > 30) App.hist.shift(); };
+  App.go = (tab, sub) => { if (tab !== App.tab || (sub && sub !== App.sub[tab])) App.remember(); App.tab = tab; if (sub) App.sub[tab] = sub; if (tab === 'treino' && sub) App.progOpen = null; App.render(); $('#view').scrollTop = 0; };
+  App.goBack = () => {
+    const h = App.hist.pop(); if (!h) return false;
+    App.tab = h.tab; App.sub.treino = h.sub; App.progOpen = h.prog; App.render(); $('#view').scrollTop = h.y || 0; return true;
+  };
   App.render = () => {
     $$('#tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === App.tab));
+    $('#btn-back').hidden = !App.hist.length;
     if (Bike.R.map && App.tab !== 'bike') { try { Bike.R.map.remove(); } catch (e) {} Bike.R.map = null; Bike.R.dot = null; Bike.R.line = null; }
     const v = $('#view');
     document.body.classList.toggle('onb', !S().profile);
@@ -114,6 +132,9 @@
     };
   }
 
+  const playBtn = (kind, arg, label) => `<button class="play-btn" type="button" data-act="play" data-kind="${kind}" data-arg="${esc(arg)}" aria-label="Começar ${esc(label)} com a treinadora"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg></button>`;
+  App.playBtn = playBtn;
+
   // ---------- HOJE ----------
   function nextP28() { for (let d = 1; d <= 28; d++) if (!S().p28.done[d]) return d; return null; }
   function todayAranha() { const wd = new Date().getDay(); const map = [6, 0, 1, 2, 3, 4, 5]; return EXDB.ARANHA.week[map[wd]]; }
@@ -141,8 +162,8 @@
       <button class="tile" type="button" data-act="weight"><span class="lbl">Peso</span><span class="v">${fmt(Store.weightNow(), 1)} kg</span><span class="tiny mute">IMC ${fmt(g.bmi, 1)}</span></button>
     </div>
     <div class="card"><span class="lbl">Treino de hoje</span>
-      ${p28 ? `<div class="li click" data-act="p28" data-arg="${p28}"><div class="grow"><div class="t">28 Dias em Casa · dia ${p28}</div><div class="s">${esc(EXDB.day28(p28).short)}</div></div><span class="pill">Abrir</span></div>` : ''}
-      ${arSess ? `<div class="li click" data-act="aranha" data-arg="${ar[1]}"><div class="grow"><div class="t">Protocolo Aranha · ${esc(arSess.name)}</div><div class="s">${ar[0]} · nível ${s.aranha.level}</div></div><span class="pill">Abrir</span></div>` : `<div class="li"><div class="grow"><div class="t">Protocolo Aranha</div><div class="s">Hoje é descanso no plano semanal</div></div></div>`}
+      ${p28 ? `<div class="li click" data-act="p28" data-arg="${p28}"><div class="grow"><div class="t">28 Dias em Casa · dia ${p28}</div><div class="s">${esc(EXDB.day28(p28).short)}</div></div>${playBtn('p28', p28, '28 Dias, dia ' + p28)}</div>` : ''}
+      ${arSess ? `<div class="li click" data-act="aranha" data-arg="${ar[1]}"><div class="grow"><div class="t">Protocolo Aranha · ${esc(arSess.name)}</div><div class="s">${ar[0]} · nível ${s.aranha.level}</div></div>${playBtn('aranha', ar[1], arSess.name)}</div>` : `<div class="li"><div class="grow"><div class="t">Protocolo Aranha</div><div class="s">Hoje é descanso no plano semanal</div></div></div>`}
       <div class="li click" data-act="go" data-arg="treino" data-sub="montar"><div class="grow"><div class="t">Montar um treino agora</div><div class="s">Escolha tempo, foco e equipamento, ou fale</div></div><span class="pill">Montar</span></div></div>
     <div class="card click" data-act="go" data-arg="treino" data-sub="rosto"><div class="row between"><span class="lbl">Rosto e mandíbula</span>${jawToday ? '<span class="pill solid">Feito hoje</span>' : '<span class="pill">Pendente</span>'}</div><p class="small ink2">${jawStreak ? jawStreak + (jawStreak > 1 ? ' dias seguidos' : ' dia') : 'Postura, mordedor e pescoço em 8 minutos'}</p></div>
     <div class="card"><span class="lbl">Fale com o app</span><p class="small ink2">Toque no microfone e diga, por exemplo:</p><ul class="small mute" style="margin:0;padding-left:18px"><li>“Dormi 6 horas e meia e tomei dois copos de água”</li><li>“No almoço comi arroz, feijão e 150 gramas de frango”</li><li>“Monta um treino de 20 minutos sem peso para perna”</li><li>“Quero o treino do Homem-Aranha”</li></ul></div>`;
@@ -177,7 +198,7 @@
       const plan = isC ? ['A', 'B', 'C'] : ['A', 'B', 'A'];
       return back + `<div class="card"><span class="lbl">Programa</span><h2>${esc(p.name)}</h2><p class="small ink2">${esc(p.desc)}</p>
         <div class="field"><label>Semana</label><div class="seg">${[1, 2, 3, 4].map(w => `<button type="button" class="${st.week === w ? 'on' : ''}" data-act="${isC ? 'cal' : 'hal'}-week" data-arg="${w}">${w}</button>`).join('')}</div></div>
-        <div class="list">${plan.map((d, i) => { const ss = isC ? EXDB.calSession(d, st.week) : EXDB.halSession(d, st.week); return `<div class="li click" data-act="${isC ? 'cal' : 'hal'}" data-arg="${d}"><span class="pill" style="min-width:58px;text-align:center">Treino ${i + 1}</span><div class="grow"><div class="t">${esc(days[d].name)}</div><div class="s">${esc(ss.short)}</div></div></div>`; }).join('')}</div>
+        <div class="list">${plan.map((d, i) => { const ss = isC ? EXDB.calSession(d, st.week) : EXDB.halSession(d, st.week); return `<div class="li click" data-act="${isC ? 'cal' : 'hal'}" data-arg="${d}"><span class="pill" style="min-width:58px;text-align:center">Treino ${i + 1}</span><div class="grow"><div class="t">${esc(days[d].name)}</div><div class="s">${esc(ss.short)}</div></div>${playBtn(isC ? 'cal' : 'hal', d, days[d].name)}</div>`; }).join('')}</div>
         <p class="tiny mute">Faça os treinos em dias alternados. Passe para a semana seguinte quando completar todas as séries com boa técnica.</p>
         ${!isC && !s.eq.includes('halteres') && !s.calis ? '<div class="note">Você não marcou halteres no seu perfil. O app troca os exercícios por versões sem peso até você marcar.</div>' : ''}</div>`;
     }
@@ -187,10 +208,10 @@
     const s = S(), A = EXDB.ARANHA, nx = nextP28();
     const grid = [1, 2, 3, 4].map(w => `<div class="row between"><span class="tiny lbl">Semana ${w} · ${EXDB.W28[w - 1].name}</span></div><div class="days">${[1, 2, 3, 4, 5, 6, 7].map(i => { const d = (w - 1) * 7 + i; const t = EXDB.PATTERN[(d - 1) % 7]; const tt = d === 28 ? 'T' : t; return `<button type="button" class="day ${tt === 'R' ? 'rest' : ''} ${s.p28.done[d] ? 'done' : ''} ${d === nx ? 'next' : ''}" data-act="p28" data-arg="${d}"><span>${d}</span><small>${{ A: 'A', B: 'B', C: 'C', R: 'LEVE', T: 'TESTE' }[tt]}</small></button>`; }).join('')}</div>`).join('');
     const done28 = Object.keys(s.p28.done).length;
-    const c28 = `<div class="card prog-card"><span class="pill tag num">${done28}/28</span><span class="lbl">Programa</span><h2>28 Dias em Casa</h2><p class="small ink2">Só peso do corpo, 20 a 30 minutos, com progressão semana a semana. A pernas e peito, B core e cardio, C costas e postura.</p>${bar(done28, 28)}${grid}</div>`;
+    const c28 = `<div class="card prog-card"><span class="pill tag num">${done28}/28</span><span class="lbl">Programa</span><h2>28 Dias em Casa</h2><p class="small ink2">Só peso do corpo, 20 a 30 minutos, com progressão semana a semana. A pernas e peito, B core e cardio, C costas e postura.</p>${bar(done28, 28)}${nx ? `<div class="li"><div class="grow"><div class="t">Próximo: dia ${nx}</div><div class="s">${esc(EXDB.day28(nx).short)}</div></div>${playBtn('p28', nx, 'dia ' + nx)}</div>` : ''}${grid}</div>`;
     const car = `<div class="card"><span class="lbl">Programa</span><h2>${A.name}</h2><p class="small ink2">${esc(A.sub)}</p>
       <div class="field"><label>Nível</label><div class="seg">${[1, 2, 3].map(l => `<button type="button" class="${s.aranha.level === l ? 'on' : ''}" data-act="ar-level" data-arg="${l}">${['', 'Iniciante', 'Intermediário', 'Completo'][l]}</button>`).join('')}</div></div>
-      <div class="list">${A.week.map(([wd, k]) => { const ss = A.sessions[k](s.aranha.level); return `<div class="li ${ss ? 'click' : ''}" ${ss ? `data-act="aranha" data-arg="${k}"` : ''}><span class="pill" style="min-width:48px;text-align:center">${wd}</span><div class="grow"><div class="t">${ss ? esc(ss.name) : 'Descanso'}</div><div class="s">${ss ? esc(ss.short) : 'Recuperação total'}</div></div></div>`; }).join('')}</div>
+      <div class="list">${A.week.map(([wd, k]) => { const ss = A.sessions[k](s.aranha.level); return `<div class="li ${ss ? 'click' : ''}" ${ss ? `data-act="aranha" data-arg="${k}"` : ''}><span class="pill" style="min-width:48px;text-align:center">${wd}</span><div class="grow"><div class="t">${ss ? esc(ss.name) : 'Descanso'}</div><div class="s">${ss ? esc(ss.short) : 'Recuperação total'}</div></div>${ss ? playBtn('aranha', k, ss.name) : ''}</div>`; }).join('')}</div>
       <details><summary class="small">O que se sabe do treino dele</summary><div class="stack small ink2" style="margin-top:8px">${A.about.map(p => `<p>${esc(p)}</p>`).join('')}<p class="lbl" style="margin-top:6px">Fontes</p>${A.sources.map(([t, u]) => `<a class="small" href="#" data-act="url" data-arg="${esc(u)}">${esc(t)}</a>`).join('')}</div></details></div>`;
     return which === 'p28' ? c28 : car;
   }
@@ -219,8 +240,8 @@
       else if (b.kind === 'ladder') { head = b.label + ' · 1 até ' + b.top + ' e volta'; items = b.items.map(([id, m]) => [id, m + '× o degrau']); }
       return `<div class="block"><div class="row between" style="border-bottom:1px solid var(--line);padding-bottom:4px"><b class="small">${esc(head)}</b></div>${items.map(([id, r]) => { const ex = EXDB.resolve(id, userEq(), { lim: S().lim }) || EXDB.X[id]; return `<div class="exrow" data-act="ex" data-arg="${ex.id}"><div class="thumb" data-thumb="${ex.anim}"></div><div><div class="t" style="font-weight:650">${esc(ex.n)}</div><div class="tiny mute">${esc(ex.g)}${ex.id !== id ? ' · no lugar de ' + esc(EXDB.X[id].n) : ''}</div></div><span class="small num mute">${esc(r)}</span></div>`; }).join('')}</div>`;
     }).join('');
-    return `<div class="card"><span class="lbl">${kind === 'gen' ? 'Seu treino' : 'Sessão'}</span><h2>${esc(sess.name)}</h2>${sess.short ? `<p class="small mute">${esc(sess.short)}</p>` : ''}${sess.note ? `<div class="note">${esc(sess.note)}</div>` : ''}${rows}
-      <div class="grid2">${kind === 'gen' ? '<button class="btn" type="button" data-act="gen">Gerar outro</button>' : '<span></span>'}<button class="btn pri" type="button" data-act="start" data-kind="${kind}" data-arg="${esc(arg || '')}">Começar</button></div></div>`;
+    return `<div class="card"><div class="row between" style="align-items:flex-start"><div class="grow"><span class="lbl">${kind === 'gen' ? 'Seu treino' : 'Sessão'}</span><h2>${esc(sess.name)}</h2></div>${playBtn(kind, arg || '', sess.name)}</div>${sess.short ? `<p class="small mute">${esc(sess.short)}</p>` : ''}${sess.note ? `<div class="note">${esc(sess.note)}</div>` : ''}${rows}
+      <div class="grid2">${kind === 'gen' ? '<button class="btn" type="button" data-act="gen">Gerar outro</button>' : '<span></span>'}<button class="btn pri" type="button" data-act="play" data-kind="${kind}" data-arg="${esc(arg || '')}">Começar guiado</button></div></div>`;
   }
   function tRosto() {
     const s = S(), I = EXDB.JAW_INFO, k = Store.dkey();
@@ -290,10 +311,11 @@
   }
   function exSheet(id) {
     const e = EXDB.X[id]; if (!e) return;
-    App.sheet(`<div class="mq" id="ex-mq"></div><h2>${esc(e.n)}</h2><div class="chips"><span class="pill">${esc(e.g)}</span><span class="pill">${['', 'Iniciante', 'Intermediário', 'Avançado'][e.lvl]}</span><span class="pill">${e.eq.length ? e.eq.map(x => EXDB.EQ_LABEL[x]).join(', ') : 'Sem equipamento'}</span>${e.imp ? '<span class="pill">Com salto</span>' : ''}</div>
+    const stacked = $('#sheet').classList.contains('open');
+    (stacked ? App.pushSheet : App.sheet)(`<div class="mq" id="ex-mq"></div><h2>${esc(e.n)}</h2><div class="chips"><span class="pill">${esc(e.g)}</span><span class="pill">${['', 'Iniciante', 'Intermediário', 'Avançado'][e.lvl]}</span><span class="pill">${e.eq.length ? e.eq.map(x => EXDB.EQ_LABEL[x]).join(', ') : 'Sem equipamento'}</span>${e.imp ? '<span class="pill">Com salto</span>' : ''}</div>
       <p class="ink2">${esc(e.how)}</p>${e.easy ? `<div class="grid2"><div class="tile"><span class="lbl">Mais fácil</span><span class="small">${esc(e.easy)}</span></div><div class="tile"><span class="lbl">Mais difícil</span><span class="small">${esc(e.hard)}</span></div></div>` : ''}
       ${e.lim.length ? `<p class="tiny mute">Cuidado se tiver dor em: ${e.lim.join(', ')}.</p>` : ''}
-      <button class="btn block" type="button" data-act="url" data-arg="https://www.youtube.com/results?search_query=${encodeURIComponent('como fazer ' + e.n)}">Ver vídeos no YouTube</button><button class="btn ghost block" type="button" data-close>Fechar</button>`);
+      <button class="btn block" type="button" data-act="url" data-arg="https://www.youtube.com/results?search_query=${encodeURIComponent('como fazer ' + e.n)}">Ver vídeos no YouTube</button><button class="btn ghost block" type="button" data-close>${stacked ? 'Voltar ao treino' : 'Fechar'}</button>`);
     Mannequin.show($('#ex-mq'), e.anim);
   }
 
@@ -592,13 +614,13 @@
   // ---------- cliques ----------
   document.addEventListener('click', e => {
     const t = e.target.closest('[data-act],[data-close]'); if (!t) return;
-    if (t.hasAttribute('data-close')) { App.closeSheet(); return; }
+    if (t.hasAttribute('data-close')) { App.sheetBack(); return; }
     const act = t.dataset.act, arg = t.dataset.arg, s = S();
     switch (act) {
       case 'go': App.go(arg, t.dataset.sub); break;
       case 'prog-filter': App.progFilter = arg; App.render(); break;
-      case 'prog-open': App.progOpen = arg; App.render(); $('#view').scrollTop = 0; break;
-      case 'prog-back': App.progOpen = null; App.render(); break;
+      case 'prog-open': App.remember(); App.progOpen = arg; App.render(); $('#view').scrollTop = 0; break;
+      case 'prog-back': if (!App.goBack()) { App.progOpen = null; App.render(); } break;
       case 'calis-toggle': s.calis = t.checked; Store.save(); App.toast(t.checked ? 'Calistenia pura ligada: só peso do corpo' : 'Usando seus equipamentos'); break;
       case 'cal': { const ss = EXDB.calSession(arg, s.cal.week); App.sheet(sessionCard(ss, 'cal', arg)); thumbs(); break; }
       case 'hal': { const ss = EXDB.halSession(arg, s.hal.week); App.sheet(sessionCard(ss, 'hal', arg)); thumbs(); break; }
@@ -608,7 +630,7 @@
       case 'voice-test': UCBridge.setVoice(s.settings.voiceName || '', +(s.settings.vRate || 0.98), +(s.settings.vPitch || 1.06)); setTimeout(() => UCBridge.speak('Agachamento. Dez repetições. Comigo: um, dois, três. Isso, continua assim.'), 250); break;
       case 'voice-more': if (!UCBridge.openTtsSettings()) App.toast('Só no app Android'); break;
       case 'welcome-ok': App.welcome = false; App.render(); break;
-      case 'sub': App.sub.treino = arg; if (arg === 'programas') App.progOpen = null; App.render(); break;
+      case 'sub': App.remember(); App.sub.treino = arg; App.progOpen = null; App.render(); break;
       case 'water': Store.addWater(+arg); UCBridge.vibrate(30); App.render(); App.toast('+' + arg + ' ml'); break;
       case 'water-undo': { const d = Store.day(); const l = d.waterLog.pop(); if (l) { d.water = Math.max(0, d.water - l[1]); Store.save(); App.render(); } break; }
       case 'water-custom': App.sheet(`<h2>Quanto de água?</h2><div class="chips">${[100, 150, 200, 300, 400, 600, 750, 1000].map(m => `<button type="button" class="chip" data-act="water-pick" data-arg="${m}">${m} ml</button>`).join('')}</div><input class="input" id="wc" inputmode="numeric" placeholder="ml"><button class="btn pri block" type="button" data-act="water-pick" data-arg="input">Adicionar</button>`); break;
@@ -622,10 +644,11 @@
       case 'p28-undo': delete s.p28.done[arg]; Store.save(); App.closeSheet(); App.render(); break;
       case 'aranha': previewAranha(arg); break;
       case 'ar-level': s.aranha.level = +arg; Store.save(); App.render(); break;
-      case 'start': {
+      case 'start': case 'play': {
         const kind = t.dataset.kind; let sess, meta = {};
         if (kind === 'gen') sess = gen; else if (kind === 'p28') { sess = EXDB.day28(+arg); meta.p28 = +arg; } else if (kind === 'aranha') { sess = EXDB.ARANHA.sessions[arg](s.aranha.level); meta.aranha = arg; } else if (kind === 'jaw') { sess = EXDB.jawSession(s.jaw.week); meta.jaw = true; } else if (kind === 'cal') { sess = EXDB.calSession(arg, s.cal.week); meta.cal = arg; } else if (kind === 'hal') { sess = EXDB.halSession(arg, s.hal.week); meta.hal = arg; }
-        App.closeSheet(); Player.open(sess, meta); break;
+        if (!sess) { App.toast('Esse treino não está disponível'); break; }
+        App.closeSheet(); Player.open(sess, meta, { auto: act === 'play' }); break;
       }
       case 'gen-opt': { const o = App.genOpts, k = t.dataset.key; if (k === 'noImpact') o.noImpact = !o.noImpact; else if (t.dataset.multi) { o[k] = o[k] || []; o[k] = o[k].includes(arg) ? o[k].filter(x => x !== arg) : o[k].concat(arg); } else o[k] = isNaN(+arg) ? arg : +arg; App.render(); break; }
       case 'gen': gen = EXDB.generate(Object.assign({}, App.genOpts, { seed: Date.now() })); App.render(); setTimeout(() => { const c = $$('#view .card'); if (c.length) c[c.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); break;
@@ -683,16 +706,18 @@
   });
   $$('#tabs [data-tab]').forEach(b => b.onclick = () => App.go(b.dataset.tab));
   $('#btn-profile').onclick = () => App.go('perfil');
+  $('#btn-back').onclick = () => App.back();
   $('#mic').onclick = () => { if (Player.isOpen()) return; if (V.open) return voiceClose(); voiceOpen(); };
   // intenções vindas de notificações (ex.: abrir aba)
   UCBridge.on('intent', a => { if (a && a.tab) App.go(a.tab); applyPending(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { applyPending(); if (!Player.isOpen()) App.refresh(); } });
   window.addEventListener('popstate', () => {});
   App.back = () => { // botão voltar do Android
-    if ($('#sheet').classList.contains('open')) { App.closeSheet(); return true; }
+    if ($('#sheet').classList.contains('open')) { App.sheetBack(); return true; }
     if (V.open) { voiceClose(); return true; }
-    if (Player.isOpen()) { Player.command('pause'); return true; }
-    if (App.tab !== 'hoje') { App.go('hoje'); return true; }
+    if (Player.isOpen()) { Player.back(); return true; }
+    if (App.goBack()) return true;
+    if (App.tab !== 'hoje') { App.tab = 'hoje'; App.render(); return true; }
     return false;
   };
 

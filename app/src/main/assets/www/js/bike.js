@@ -96,7 +96,7 @@
     if (!window.L) { el.innerHTML = '<div class="mq-fallback">Mapa indisponível</div>'; return null; }
     const map = L.map(el, { zoomControl: false, attributionControl: true }).setView(pts.length ? pts[pts.length - 1] : [-23.6, -46.78], pts.length ? 15 : 11);
     let errs = 0;
-    const tl = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 20, subdomains: 'abcd', attribution: '© OpenStreetMap · © CARTO' }).addTo(map);
+    const tl = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
     tl.on('tileerror', () => { if (++errs === 6) { const n = document.createElement('div'); n.className = 'map-off'; n.textContent = 'Sem internet para carregar o mapa. O percurso continua sendo gravado.'; el.appendChild(n); } });
     tl.on('tileload', () => { errs = 0; const n = el.querySelector('.map-off'); if (n) n.remove(); });
     const line = L.polyline(pts, { color: '#1fbf5a', weight: 6, opacity: 0.95 }).addTo(map);

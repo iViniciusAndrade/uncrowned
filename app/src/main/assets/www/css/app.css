@@ -192,3 +192,15 @@ body.onb #view{padding-top:calc(var(--top) + 8px);padding-bottom:calc(120px + va
 .player .intro-ctrl{grid-template-columns:1fr}
 .player .play{min-height:68px!important;font-size:1.2rem!important;gap:10px}
 input[type=range]{width:100%;accent-color:#4ef08a}
+
+/* botão voltar no topo */
+.back-btn{width:36px;height:36px;margin-right:2px}
+.back-btn[hidden]{display:none}
+.back-btn svg,.play-btn svg{width:20px;height:20px}
+/* play verde (cor da seringa) */
+.play-btn{appearance:none;flex:none;width:46px;height:46px;border-radius:50%;border:0;background:#4ef08a;color:#000;display:grid;place-items:center;box-shadow:0 0 0 4px rgba(78,240,138,.12);cursor:pointer}
+.play-btn svg{width:22px;height:22px;fill:#000;stroke:none;margin-left:2px}
+.play-btn:active{transform:scale(.94);background:#3ad276}
+/* mapa escuro a partir do OpenStreetMap */
+.map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) grayscale(.55) brightness(.9) contrast(.95)}
+.map .leaflet-container,.map.leaflet-container{background:#0b0b0b}

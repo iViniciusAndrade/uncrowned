@@ -55,18 +55,23 @@
   // ---------- frases da treinadora ----------
   const CHEER = ['Isso, continua assim.', 'Respira e mantém o ritmo.', 'Boa, você está indo bem.', 'Firme, sem perder a postura.', 'Só mais um pouco.', 'Capricha na técnica.', 'Tá ficando bonito, continua.'];
   const pick = a => a[Math.floor(Math.random() * a.length)];
+  const WARM = ['Isso, solta o corpo. Continua.', 'Vai esquentando, sem pressa.', 'Boa, mantém o movimento.', 'Respira fundo e continua.'];
+  const COOL = ['Respira devagar e solta.', 'Sem forçar, só sente alongar.', 'Relaxa os ombros. Isso.'];
   const NUMS = ['zero', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'catorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove', 'vinte'];
-  const say = t => { if (Store.S.settings.voice) UCBridge.speak(t); };
+  // fala e devolve quanto tempo (ms) a frase deve levar, para a contagem não atropelar a explicação
+  const say = t => { if (Store.S.settings.voice) UCBridge.speak(t); return Store.S.settings.voice ? Math.round(String(t).length / 13.5 * 1000 / (+(Store.S.settings.vRate || 1))) : 0; };
   const sayNum = n => n <= 20 ? NUMS[n] : String(n);
   function tempo(ex) { if (!ex) return 2.5; if (ex.pat === 'cardio') return 1.3; if (ex.pat === 'mob' || ex.pat === 'face') return 2.5; if (ex.pat === 'core') return 2.4; return 2.7; }
   function repTarget(reps) { if (!reps) return null; const m = String(reps).match(/^(\d+)(\s*por lado)?/); if (!m) return null; return { n: +m[1] * (m[2] ? 2 : 1), sides: !!m[2], per: +m[1] }; }
   function sessionMinutes(steps) { let t = 0; steps.forEach(x => { t += x.secs || (x.reps ? (repTarget(x.reps) ? repTarget(x.reps).n * tempo(x.ex) : 45) : 0); }); return Math.max(1, Math.round(t / 60)); }
 
   // ---------- abertura: apresenta o treino e espera o play ----------
-  function open(session, meta) {
+  function open(session, meta, opts) {
     if (!session) return;
-    P.session = session; P.meta = meta || {}; P.steps = build(session); P.i = -1; P.paused = false; P.done = false; P.kcal = 0; P.rounds = 0; P.active = 0; P.started = false;
+    opts = opts || {};
+    P.session = session; P.meta = meta || {}; P.steps = build(session); P.i = -1; P.paused = false; P.done = false; P.kcal = 0; P.rounds = 0; P.active = 0; P.started = false; P.auto = !!opts.auto; P.told = {};
     const el = $('#player'); el.classList.add('open'); el.setAttribute('aria-hidden', 'false');
+    if (P.auto) { UCBridge.keepAwake(true); startRun(); if (Store.S.settings.handsFree) setTimeout(listenLoop, 4000); return; }
     const blocks = session.blocks.map(b => {
       const items = (b.items || []).map(x => Array.isArray(x) ? x : [x]);
       let info = b.kind === 'list' ? b.secs + ' s cada' : b.kind === 'timed' ? (b.rounds + (b.rounds > 1 ? ' voltas' : ' volta') + ' · ' + b.work + ' s cada') : b.kind === 'circuit' ? b.rounds + ' voltas' : b.kind === 'amrap' ? b.mins + ' minutos, o máximo de voltas' : b.kind === 'ladder' ? 'de 1 até ' + b.top + ' e volta' : 'séries';
@@ -75,7 +80,7 @@
     }).join('');
     const mins = sessionMinutes(P.steps), n = new Set(P.steps.filter(x => x.ex).map(x => x.ex.id)).size;
     el.className = 'player open';
-    el.innerHTML = `<div class="ph-top"><button class="btn sm ghost" id="pl-exit" type="button">Fechar</button><span class="tiny mute">Treino guiado</span><button class="btn sm ghost" id="pl-voice" type="button">${Store.S.settings.voice ? 'Voz ligada' : 'Voz desligada'}</button></div>
+    el.innerHTML = `<div class="ph-top"><button class="btn sm ghost" id="pl-exit" type="button"><svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M15 6l-6 6 6 6"/></svg>Voltar</button><span class="tiny mute">Treino guiado</span><button class="btn sm ghost" id="pl-voice" type="button">${Store.S.settings.voice ? 'Voz ligada' : 'Voz desligada'}</button></div>
       <div class="intro"><div class="mq" id="pl-mq" style="max-height:26vh;width:min(100%,26vh);align-self:center"></div><span class="lbl">Hoje</span><h1>${esc(session.name)}</h1>${session.short ? `<p class="small ink2">${esc(session.short)}</p>` : ''}
         <div class="grid3"><div class="tile"><span class="lbl">Tempo</span><span class="v">~${mins} min</span></div><div class="tile"><span class="lbl">Exercícios</span><span class="v">${n}</span></div><div class="tile"><span class="lbl">Etapas</span><span class="v">${P.steps.length}</span></div></div>
         <div class="card tight">${blocks}</div>
@@ -95,7 +100,7 @@
     if (P.started) return;
     P.started = true; P.start = Date.now();
     const el = $('#player');
-    el.innerHTML = `<div class="ph-top"><button class="btn sm ghost" id="pl-exit" type="button">Sair</button><span class="tiny mute num" id="pl-step"></span><button class="btn sm ghost" id="pl-hands" type="button">Mãos livres: ${Store.S.settings.handsFree ? 'sim' : 'não'}</button></div>
+    el.innerHTML = `<div class="ph-top"><button class="btn sm ghost" id="pl-exit" type="button"><svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M15 6l-6 6 6 6"/></svg>Sair</button><span class="tiny mute num" id="pl-step"></span><button class="btn sm ghost" id="pl-hands" type="button">Mãos livres: ${Store.S.settings.handsFree ? 'sim' : 'não'}</button></div>
       <div class="ph-bar"><i id="pl-bar"></i></div>
       <div class="ph-main"><div class="mq" id="pl-mq"></div><span class="phase" id="pl-phase"></span><div class="ex-name" id="pl-name"></div><div class="ex-reps" id="pl-reps"></div><div class="clock" id="pl-clock"></div><div class="info" id="pl-info"></div><div class="tip" id="pl-tip"></div><div class="info" id="pl-next"></div></div>
       <div class="ctrl"><button class="btn" id="pl-prev" type="button">Voltar</button><button class="btn pri" id="pl-main" type="button">Pausar</button><button class="btn" id="pl-skip" type="button">Pular</button></div>`;
@@ -118,11 +123,15 @@
     const rt = s.manual ? repTarget(s.reps) : null;
     P.count = rt ? { target: rt.n, sides: rt.sides, per: rt.per, done: 0, tempo: tempo(s.ex), nextAt: Date.now() + 3200 } : null;
     const v = Mannequin.viewer(); const ex = s.ex || s.next; if (v && ex) v.play(ex.anim);
-    if (s.ph === 'work' && rt) say(s.name + '. ' + (rt.sides ? rt.per + ' de cada lado' : rt.n + ' repetições') + '. Comigo, no meu ritmo. Já!');
+    const how = s.ex && !P.told[s.ex.id] && s.ex.how ? ' ' + s.ex.how : ''; if (s.ex) P.told[s.ex.id] = 1;
+    if (i === 0 && s.ph === 'prep' && P.auto) say('Vamos começar! Se prepara: em ' + s.secs + ' segundos, ' + (/aquec/i.test(s.name) ? 'vamos pelo aquecimento' : 'vamos para ' + s.name.toLowerCase()) + '. Primeiro, ' + (s.next ? s.next.n : '') + '.');
+    else if (s.ph === 'warm') say((P.steps[i - 1] && P.steps[i - 1].ph === 'warm' ? 'Agora, ' : 'Bora, aquecendo. ') + s.name + ', ' + s.secs + ' segundos.' + how);
+    else if (s.ph === 'cool') say((P.steps[i - 1] && P.steps[i - 1].ph === 'cool' ? 'Agora, ' : 'Hora de alongar. ') + s.name + ', ' + s.secs + ' segundos.' + how);
+    else if (s.ph === 'work' && rt) { const ms = say(s.name + '. ' + (rt.sides ? rt.per + ' de cada lado' : rt.n + ' repetições') + '.' + how + ' Comigo, no meu ritmo. Já!'); P.count.nextAt = Date.now() + Math.max(3200, ms + 500); }
     else if (s.ph === 'work' && s.manual) say(s.name + ', ' + (s.reps === 'o máximo' ? 'o máximo que conseguir com boa técnica. Aperta feito quando terminar.' : s.reps + '. Aperta feito quando terminar.'));
-    else if (s.ph === 'work') say('Vamos lá. ' + s.name + ', ' + s.secs + ' segundos.');
+    else if (s.ph === 'work') say('Vamos lá. ' + s.name + ', ' + s.secs + ' segundos.' + how);
     else if (s.ph === 'rest') say('Descanso de ' + s.secs + ' segundos. Respira. Depois vem ' + (s.next ? s.next.n : 'o fim') + '.');
-    else if (s.ph === 'prep') say(s.name + '. Prepara aí. Primeiro, ' + (s.next ? s.next.n : '') + '.');
+    else if (s.ph === 'prep') say(s.name + '. Prepara aí, ' + s.secs + ' segundos. Primeiro, ' + (s.next ? s.next.n : '') + '.');
     else if (s.ph === 'amrap') say('Valendo! ' + Math.round(s.secs / 60) + ' minutos. ' + s.list.map(x => x[1] + ' ' + x[0].n).join(', ') + '. A cada volta, aperta mais uma volta.');
     else say(s.name + ', ' + s.secs + ' segundos.');
     UCBridge.vibrate(s.ph === 'work' || s.ph === 'amrap' ? 220 : 90);
@@ -164,7 +173,10 @@
         else if (total >= 20 && sec === 10 && !P.cues.ten) { P.cues.ten = 1; say('Faltam dez segundos.'); }
         else if (s.ph === 'amrap' && sec === 60 && total > 120 && !P.cues.min) { P.cues.min = 1; say('Último minuto, acelera!'); }
         else if (sec === 3 && !P.cues.three) { P.cues.three = 1; say('Três, dois, um.'); }
-      } else if (s.ph === 'rest' && sec === 3 && !P.cues.three) { P.cues.three = 1; say('Prepara. Três, dois, um.'); }
+      } else if (s.ph === 'warm' || s.ph === 'cool') {
+        if (total >= 20 && sec === Math.round(total / 2) && !P.cues.half) { P.cues.half = 1; say(pick(s.ph === 'warm' ? WARM : COOL)); }
+        else if (sec === 3 && !P.cues.three && P.steps[P.i + 1] && P.steps[P.i + 1].ph === s.ph) { P.cues.three = 1; say('Três, dois, um, troca.'); }
+      } else if ((s.ph === 'rest' || s.ph === 'prep') && sec === 3 && !P.cues.three) { P.cues.three = 1; say(s.ph === 'prep' ? 'Três, dois, um, já!' : 'Prepara. Três, dois, um.'); }
       if (sec > 0 && sec <= 3) UCBridge.vibrate(40);
     }
     if (rem <= 0) next();
@@ -235,6 +247,7 @@
     if (window.App) App.refresh();
   }
   function isOpen() { return $('#player').classList.contains('open'); }
+  function back() { if (!P.started || P.done) return close(); if (!P.paused) togglePause(); confirmExit(); }
   function command(cmd) {
     if (!isOpen() || P.done) return false;
     if (!P.started) { if (cmd === 'start' || cmd === 'resume' || cmd === 'next') startRun(); else if (cmd === 'stop') close(); return true; }
@@ -256,5 +269,5 @@
     if (ev.type === 'final') { const a = Voice.parse(ev.text)[0]; if (a && a.type === 'control') { command(a.cmd); App.toast('“' + ev.text + '”'); } else if (/\b(play|comecar|começar|bora|vamos)\b/i.test(ev.text) && !P.started) startRun(); }
     if ((ev.type === 'end' || ev.type === 'error') && Store.S.settings.handsFree) setTimeout(listenLoop, 900);
   });
-  window.Player = { open, close, command, isOpen, build, startRun };
+  window.Player = { open, close, command, isOpen, build, startRun, back };
 })();
