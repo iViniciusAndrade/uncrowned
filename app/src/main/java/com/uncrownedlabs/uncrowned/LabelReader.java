@@ -60,13 +60,20 @@ final class LabelReader {
         if (src == null) { fail(a, "Foto não recebida"); return true; }
         new Thread(() -> {
             try {
-                Bitmap bmp = load(a, src);
+                Bitmap bmp = null;
+                try { bmp = load(a, src); } catch (Exception ignored) { }
+                // alguns apps de câmera ignoram o arquivo pedido e devolvem só a miniatura
+                if (bmp == null && data != null && data.getExtras() != null && data.getExtras().get("data") instanceof Bitmap) bmp = (Bitmap) data.getExtras().get("data");
                 if (bmp == null) { fail(a, "Não deu para abrir a foto"); return; }
                 TextRecognizer rec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
                 final int w = bmp.getWidth(), h = bmp.getHeight();
                 rec.process(InputImage.fromBitmap(bmp, 0))
                         .addOnSuccessListener(t -> { try { ok(a, toJson(t, w, h)); } catch (Exception e) { fail(a, "Falha ao ler o texto"); } rec.close(); })
-                        .addOnFailureListener(e -> { fail(a, e.getMessage() != null ? e.getMessage() : "Falha ao ler o texto"); rec.close(); });
+                        .addOnFailureListener(e -> {
+                            String m = e.getMessage() != null ? e.getMessage() : "";
+                            fail(a, m.toLowerCase(java.util.Locale.ROOT).contains("download") ? "O leitor de texto ainda está sendo baixado pelo Google Play. Conecte na internet, espere um minuto e tente de novo." : "Falha ao ler o texto" + (m.isEmpty() ? "" : ": " + m));
+                            rec.close();
+                        });
             } catch (Throwable e) {
                 fail(a, "Leitura de texto indisponível neste aparelho");
             }

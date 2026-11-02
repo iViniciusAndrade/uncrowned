@@ -40,12 +40,13 @@
       return { t: text, s: squash(text), x0, x1, cy: (y0 + y1) / 2, h: Math.max(8, y1 - y0), words };
     });
     const full = squash(lines.map(l => l.t).join(' '));
-    const out = { values: {}, found: {}, base: '100', portion: null, unit: 'g', warn: [] };
+    const out = { values: {}, found: {}, base: '100', portion: null, unit: null, warn: [] };
 
     // 3) porção e unidade
     const pm = full.match(/porcao(?:de)?:?(\d+(?:[.,]\d+)?)(g|ml)/);
     if (pm) { out.portion = parseFloat(pm[1].replace(',', '.')); out.unit = pm[2]; }
     else if (/100ml/.test(full)) out.unit = 'ml';
+    else if (/100g/.test(full)) out.unit = 'g';
     // 4) colunas do cabeçalho
     let col100 = null, colP = null;
     L.forEach(l => l.words.forEach(w => {

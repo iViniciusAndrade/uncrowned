@@ -38,7 +38,7 @@
   // ---------- navegação ----------
   App.hist = [];
   const snap = () => ({ tab: App.tab, sub: App.sub.treino, prog: App.progOpen || null, y: $('#view').scrollTop });
-  App.remember = () => { const c = snap(), l = App.hist[App.hist.length - 1]; if (!l || l.tab !== c.tab || l.sub !== c.sub || l.prog !== c.prog) App.hist.push(c); if (App.hist.length > 30) App.hist.shift(); };
+  App.remember = () => { const c = snap(), l = App.hist[App.hist.length - 1]; if (!l || l.tab !== c.tab || l.sub !== c.sub || l.prog !== c.prog) App.hist.push(c); if (App.hist.length > 12) App.hist.shift(); };
   App.go = (tab, sub) => { if (tab !== App.tab || (sub && sub !== App.sub[tab])) App.remember(); App.tab = tab; if (sub) App.sub[tab] = sub; if (tab === 'treino' && sub) App.progOpen = null; App.render(); $('#view').scrollTop = 0; };
   App.goBack = () => {
     const h = App.hist.pop(); if (!h) return false;
@@ -423,7 +423,7 @@
       <div class="field"><label>Valores informados por</label><div class="seg" id="cf-base"><button type="button" class="on" data-v="100">100 <span class="cf-u">${un}</span></button><button type="button" data-v="porcao">Porção</button></div></div>
       <div class="field" id="cf-pg-w"><label for="cf-pg">Porção do rótulo (<span class="cf-u">${un}</span>)</label><input class="input" id="cf-pg" inputmode="decimal" value="${esc(o.portion ? String(o.portion).replace('.', ',') : '')}" placeholder="opcional"></div>
       <div class="grid2">${fld('k', 'kcal', 'Calorias (kcal)')}${fld('p', 'p', 'Proteína (g)')}${fld('c', 'c', 'Carboidrato (g)')}${fld('g', 'g', 'Gordura (g)')}${fld('f', 'f', 'Fibra (g)')}${fld('na', 'na', 'Sódio (mg)')}</div>
-      ${o.fromPhoto || o.fix ? '<div class="grid2"><button class="btn sm ghost" type="button" id="cf-again">Tirar outra foto</button><span></span></div>' : ''}
+      ${UCBridge.native ? `<div class="grid2"><button class="btn sm ghost" type="button" id="cf-again">${o.fromPhoto ? 'Tirar outra foto' : 'Preencher com foto'}</button><span></span></div>` : ''}
       <button class="btn pri block" type="button" id="cf-ok">${o.fix ? 'Salvar correção' : 'Salvar e informar quanto comi'}</button>`);
     let base = '100', unit = un;
     $('#cf-base').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; base = b.dataset.v; $$('#cf-base button').forEach(x => x.classList.toggle('on', x === b)); $('#cf-pg').placeholder = base === '100' ? 'opcional' : 'obrigatório'; };

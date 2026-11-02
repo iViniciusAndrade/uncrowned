@@ -34,7 +34,8 @@
       return;
     }
     R.dist += d;
-    R.moving += Math.min(dt, 10);
+    // buraco no GPS (túnel, tela desligada): conta o tempo pela velocidade, senão a média sobe sozinha
+    R.moving += dt <= 10 ? dt : Math.min(dt, d / Math.max(v, minSpeed(R.mode)));
     R.speed = v * 3.6;
     R.sm = R.sm ? R.sm * 0.6 + R.speed * 0.4 : R.speed;
     if (R.sm > R.max && acc <= 15) R.max = R.sm;
@@ -69,14 +70,15 @@
     UCBridge.stopTracking(); UCBridge.keepAwake(false); clearInterval(R.iv);
     const secs = Math.round(elapsed());
     R.on = false;
-    if (R.dist < 50 || secs < 20) { App.toast(R.dist < 50 ? 'Nenhum deslocamento detectado, o percurso não foi salvo' : 'Percurso muito curto, não foi salvo'); App.render(); return; }
+    const clear = () => Object.assign(R, { pts: [], start: 0, pausedMs: 0, dist: 0, moving: 0, max: 0, gain: 0, speed: 0, anchor: null, sm: 0, lastAcc: null, paused: false });
+    if (R.dist < 50 || secs < 20) { App.toast(R.dist < 50 ? 'Nenhum deslocamento detectado, o percurso não foi salvo' : 'Percurso muito curto, não foi salvo'); clear(); App.render(); return; }
     const ride = { id: 'r' + Date.now().toString(36), t: R.start, d: Store.dkey(new Date(R.start)), mode: R.mode, secs, moving: Math.round(R.moving), dist: Math.round(R.dist), max: Math.round(R.max * 10) / 10, gain: Math.round(R.gain), kcal: kcal(), pts: simplify(R.pts.map(p => [Math.round(p.lat * 1e6) / 1e6, Math.round(p.lon * 1e6) / 1e6]), 6) };
     const S = Store.S; S.rides.unshift(ride);
     const d = Store.day(ride.d); d.workouts.push({ t: ride.t, d: ride.d, id: 'ride', name: MODES[ride.mode] + ' · ' + (ride.dist / 1000).toFixed(1) + ' km', mins: Math.round(secs / 60), kcal: ride.kcal }); d.kcalOut = (d.kcalOut || 0) + ride.kcal;
     S.history.unshift({ t: ride.t, d: ride.d, id: 'ride', name: MODES[ride.mode], mins: Math.round(secs / 60), kcal: ride.kcal });
     Store.save();
     if (S.settings.voice) UCBridge.speak('Percurso salvo. ' + (ride.dist / 1000).toFixed(1).replace('.', ',') + ' quilômetros.');
-    App.render(); App.openRide(ride.id);
+    clear(); App.render(); App.openRide(ride.id);
   }
   function rebuild(buf) { const keep = R.on; R.pts = []; R.dist = 0; R.moving = 0; R.max = 0; R.gain = 0; R.anchor = null; R.sm = 0; R.altS = null; R.altBase = null; const on = R.on; R.on = true; const pz = R.paused; R.paused = false; buf.forEach(onLoc); R.on = on; R.paused = pz; return keep; }
   function resync() { if (!R.on) return; const buf = UCBridge.trackBuffer(); if (buf && buf.length > R.pts.length) rebuild(buf); }

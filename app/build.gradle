@@ -48,5 +48,6 @@ android {
 dependencies {
     implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'
     // leitura do texto da tabela nutricional, no próprio celular e sem internet
-    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    // versão que usa o modelo do Google Play Services (o APK continua pequeno)
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.1'
 }
