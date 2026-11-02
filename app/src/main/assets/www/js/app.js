@@ -355,7 +355,7 @@
     catch (e) { if (my === fs.seq) { fs.remote = []; fs.err = true; } }
     if (my === fs.seq) { fs.loading = false; renderFS(); }
   }
-  function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · TACO' : f.src === 'IBGE' ? 'Genérico · IBGE' : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
+  function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · ' + (f.vsrc || 'TACO') : f.src === 'IBGE' ? 'Genérico · IBGE' : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
   function renderFS() {
     const el = $('#fs-res'); if (!el) return;
     const s = S();
@@ -380,7 +380,7 @@
     let grams = existing ? existing.grams : (meas.find(m => m.label === 'unidade') || meas[0] || { g: 100 }).g;
     let label = existing ? existing.label : '';
     const fav = S().fav.includes(f.ref), un = f.unit === 'ml' ? 'ml' : 'g', branded = f.src !== 'TACO' && f.src !== 'IBGE';
-    App.sheet(`<span class="lbl">${esc(f.src === 'TACO' ? 'Natural · TACO' : f.src === 'IBGE' ? 'Genérico sem marca · IBGE POF 2008-2009' : f.src)}${f.brand ? ' · ' + esc(f.brand) : ''}</span><h2>${esc(f.name)}</h2>
+    App.sheet(`<span class="lbl">${esc(f.src === 'TACO' ? 'Natural · ' + (f.vsrc || 'TACO') : f.src === 'IBGE' ? 'Genérico sem marca · IBGE POF 2008-2009' : f.src)}${f.brand ? ' · ' + esc(f.brand) : ''}</span><h2>${esc(f.name)}</h2>
       <div class="chips">${meas.map((m, i) => `<button type="button" class="chip" data-m="${i}">${esc(m.label)} · ${fmt(m.g)} g</button>`).join('')}<button type="button" class="chip" data-g="100">100 ${un}</button></div>
       <div class="grid2"><div class="field"><label for="pt-q">Quantidade</label><input class="input" id="pt-q" inputmode="decimal" value="1"></div><div class="field"><label for="pt-g">${un === 'ml' ? 'Mililitros' : 'Gramas'}</label><input class="input" id="pt-g" inputmode="decimal" value="${fmt(grams, 1).replace('.', '')}"></div></div>
       <div class="card tight"><div class="row between"><span class="big" id="pt-kcal">0</span><span class="mute">kcal</span></div><div class="macros small" id="pt-mac"></div></div>

@@ -1,7 +1,11 @@
 /* Alimentos: TACO (UNICAMP) + alimentos do usuário + Open Food Facts por código de barras. */
 (function () {
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ,/%-]/g, ' ').replace(/\s+/g, ' ').trim();
-  const T = (window.TACO || []).map(r => ({ ref: 't:' + r[0], id: r[0], name: r[1], cat: r[2], kcal: r[3], p: r[4], c: r[5], g: r[6], f: r[7], na: r[8], src: 'TACO', key: norm(r[1]) }));
+  // Linhas da TACO que vêm sem valores (em branco na própria tabela). Leite é comum demais para ficar com 0 kcal:
+  // integral pelo IBGE (POF 2008-2009, mesma fonte dos genéricos do app) e desnatado pela TBCA/USP. kcal, P, C, G por 100 g.
+  const FILL = { 458: [60, 3.22, 4.52, 3.25, 'IBGE POF 2008-2009'], 457: [37, 3.12, 5.14, 0.4, 'TBCA/USP'] };
+  const T = (window.TACO || []).map(r => { const fx = FILL[r[0]]; return { ref: 't:' + r[0], id: r[0], name: r[1], cat: r[2], kcal: fx ? fx[0] : r[3], p: fx ? fx[1] : r[4], c: fx ? fx[2] : r[5], g: fx ? fx[3] : r[6], f: r[7], na: r[8], src: 'TACO', vsrc: fx ? fx[4] : null, key: norm(r[1]) }; })
+    .filter(f => f.kcal != null || /^sal\b/.test(f.key)); // sem calorias na tabela (coco verde, iogurte de abacaxi): fora da busca, para não anotar 0 kcal
   (window.GENERICOS || []).forEach(r => T.push({ ref: 'g:' + r[0], id: r[0], name: r[1], cat: 'Genéricos', kcal: r[2], p: r[3], c: r[4], g: r[5], f: r[6], na: r[7], src: 'IBGE', measures: (r[8] || []).map(m => ({ label: m[0], g: m[1] })), key: norm(r[1]) }));
   const BY = {}; T.forEach(f => BY[f.ref] = f);
   const MED = window.TACO_MEDIDAS || {};
@@ -22,7 +26,8 @@
     ['refrigerante', 'Refrigerante, tipo cola'], ['coca', 'Refrigerante, tipo cola'], ['suco de laranja', 'Laranja, pêra, suco'], ['cerveja', 'Cerveja, pilsen'], ['chocolate', 'Chocolate, ao leite'], ['pipoca', 'Pipoca, com óleo de soja, sem sal'], ['amendoim', 'Amendoim, torrado, salgado'], ['pasta de amendoim', 'Amendoim, torrado, salgado'],
     ['farofa', 'Mandioca, farofa, temperada'], ['farinha de mandioca', 'Farinha, de mandioca, torrada'], ['biscoito', 'Biscoito, salgado, cream cracker'], ['bolacha', 'Biscoito, salgado, cream cracker'], ['bolo', 'Bolo, pronto, chocolate'], ['coxinha', 'Coxinha de frango, frita'], ['pastel', 'Pastel, de carne, frito'], ['pao de queijo', 'Pão, de queijo, assado'], ['lasanha', 'Lasanha, massa fresca, cozida'], ['feijoada', 'Feijoada'], ['hamburguer', 'Hambúrguer, bovino, grelhado'], ['acai', 'Açaí, polpa, com xarope de guaraná e glucose']
   ];
-  SYN.push(['pizza de calabresa', 'Pizza de calabresa'], ['pizza calabresa', 'Pizza de calabresa'], ['pizza de mussarela', 'Pizza de muçarela'], ['pizza mussarela', 'Pizza de muçarela'], ['pizza de muçarela', 'Pizza de muçarela'], ['pizza portuguesa', 'Pizza portuguesa'], ['pizza', 'Pizza (sabor não especificado)'],
+  SYN.push(['frango frito', 'Frango, filé, à milanesa'], ['frango empanado', 'Frango, filé, à milanesa'], ['frango a milanesa', 'Frango, filé, à milanesa'], ['bife a milanesa', 'Carne, bovina, filé, à milanesa'], ['carne de porco', 'Porco, lombo, assado'], ['porco', 'Porco, lombo, assado'], ['lombo', 'Porco, lombo, assado'], ['pernil', 'Porco, pernil, assado'], ['bisteca', 'Porco, bisteca, grelhada'], ['ovos mexidos', 'Ovo, de galinha, inteiro, frito'], ['ovos fritos', 'Ovo, de galinha, inteiro, frito'], ['ovos cozidos', 'Ovo, de galinha, inteiro, cozido'],
+    ['pizza de calabresa', 'Pizza de calabresa'], ['pizza calabresa', 'Pizza de calabresa'], ['pizza de mussarela', 'Pizza de muçarela'], ['pizza mussarela', 'Pizza de muçarela'], ['pizza de muçarela', 'Pizza de muçarela'], ['pizza portuguesa', 'Pizza portuguesa'], ['pizza', 'Pizza (sabor não especificado)'],
     ['cachorro quente', 'Cachorro-quente'], ['hot dog', 'Cachorro-quente'], ['x burguer', 'Hambúrguer (sanduíche)'], ['xburguer', 'Hambúrguer (sanduíche)'], ['lanche', 'Hambúrguer (sanduíche)'], ['sanduiche', 'Hambúrguer (sanduíche)'], ['esfiha', 'Esfirra de carne'], ['esfirra', 'Esfirra de carne'],
     ['nuggets', 'Nuggets de frango empanados'], ['sassami', 'Filé de frango (sassami)'], ['filezinho', 'Filé de frango (sassami)'], ['macarrao', 'Macarrão cozido'], ['espaguete', 'Macarrão cozido'], ['miojo', 'Macarrão, instantâneo'], ['brigadeiro', 'Brigadeiro'], ['sorvete', 'Sorvete industrializado'], ['acai com granola', 'Açaí com granola'],
     ['strogonoff de carne', 'Estrogonofe de carne'], ['estrogonofe de carne', 'Estrogonofe de carne'], ['strogonoff', 'Estrogonofe de frango'], ['estrogonofe', 'Estrogonofe de frango'], ['macarrao a bolonhesa', 'Macarrão, molho bolognesa'], ['bolonhesa', 'Macarrão, molho bolognesa'], ['empada', 'Empada de frango']);
@@ -42,11 +47,11 @@
     const stem = t => t.length > 4 ? t.replace(/(oes|aes|ais|eis)$/, 'o').replace(/s$/, '').replace(/[aoe]$/, '') : t.length > 3 ? t.replace(/s$/, '') : t;
     const stoks = toks.map(stem);
     const synAll = SYNR.find(s => s[0] === n);
-    const synPre = synAll || SYNR.find(s => n.startsWith(s[0] + ' ') || (s[0].startsWith(n) && n.length >= 3));
+    const synPre = synAll || SYNR.find(s => s[0].startsWith(n) && n.length >= 3); // ainda digitando ("fra" → frango)
     all().forEach(f => {
       const key = f.key || norm(f.name);
       let sc = 0;
-      for (let j = 0; j < toks.length; j++) { const t = toks[j]; let i = key.indexOf(t); let w = 1; if (i < 0) { i = key.indexOf(stoks[j]); w = 0.8; } if (i < 0) { sc = -1; break; } sc += (i === 0 ? 30 : (key[i - 1] === ' ' || key[i - 1] === ',') ? 18 : 6) * w; }
+      for (let j = 0; j < toks.length; j++) { const t = toks[j]; let i = key.indexOf(t); let w = 1; if (i < 0) { i = key.indexOf(stoks[j]); w = 0.8; } if (i < 0) { sc = -1; break; } sc += (i === 0 ? 30 : (key[i - 1] === ' ' || key[i - 1] === ',') ? 18 : 6) * w; if (w === 1 && /^[ ,]?$/.test(key[i + t.length] || '')) sc += 8; } // palavra inteira vale mais (sal ≠ salame)
       if (sc < 0) return;
       if (synPre && synPre[1] === f.ref) sc += synAll ? 100 : 20;
       if (Store.S.fav.includes(f.ref)) sc += 25;
@@ -63,9 +68,23 @@
     if (syn) { const sf = get(syn[1]); if (sf && !res.includes(sf)) res.unshift(sf); }
     return res.slice(0, limit || 40);
   }
+  // "pães de queijo" → "pão de queijo", "coxinhas" → "coxinha", "pastéis" → "pastel"
+  const sing = n => n.split(' ').map(w => w.length < 4 || /^(de|do|da|dos|das|com|tres|mais|menos|gras)$/.test(w) ? w : w === 'paes' ? 'pao' : w.replace(/oes$/, 'ao').replace(/aes$/, 'ao').replace(/eis$/, 'el').replace(/ais$/, 'al').replace(/ns$/, 'm').replace(/([rz])es$/, '$1').replace(/([^s])s$/, '$1')).join(' ');
   function guess(q) {
-    const n = norm(q);
-    for (const [k, ref] of SYNR) { if (n === k || n.includes(k)) { const exact = search(n, 1)[0]; if (exact && norm(exact.name).length < n.length + 18 && exact.ref !== ref && n.split(' ').length >= 2 && n !== k) return exact; return get(ref); } }
+    const n0 = norm(q), n1 = sing(n0);
+    if (n1 !== n0 && !SYNR.find(s => s[0] === n0) && (SYNR.find(s => s[0] === n1) || !search(n0, 1).length)) return guess1(n1);
+    return guess1(n0);
+  }
+  function guess1(n) {
+    const padded = ' ' + n + ' ';
+    for (const [k, ref] of SYNR) {
+      if (n !== k && !padded.includes(' ' + k + ' ')) continue; // palavra inteira: "mel" não casa com "omelete"
+      if (n === k) return get(ref);
+      // a pessoa disse mais do que o sinônimo ("frango assado"): se a busca acha algo com todas as palavras, vale mais
+      // ...mas só se for o mesmo alimento-base ("frango frito" não pode virar "linguiça de frango")
+      const exact = search(n, 1)[0], head = n.split(' ')[0].slice(0, 4);
+      return exact && exact.key.startsWith(head) ? exact : get(ref);
+    }
     return search(n, 1)[0] || null;
   }
   function measures(f) {

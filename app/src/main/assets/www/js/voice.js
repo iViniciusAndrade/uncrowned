@@ -66,13 +66,22 @@
     [/^unidades?|^un\b/, 'unidade'], [/^bifes?\b/, 'bife'], [/^files?\b/, 'filé'], [/^pratos?/, 'prato'], [/^porc(?:ao|oes)/, 'porção'], [/^latas?/, 'lata'], [/^potes?/, 'pote']
   ];
   const DEFAULT_G = { 'copo médio': 240, 'copo americano': 150, 'xícara de chá': 200, 'xícara de café': 50, 'colher de sopa': 15, 'colher de sobremesa': 10, 'colher de chá': 5, 'concha': 120, 'fatia': 25, 'pedaço': 60, 'prato': 300, 'lata': 350, 'pote': 170, 'bife': 100, 'filé': 100, 'porção': 100, 'colher de arroz (de servir)': 45, 'escumadeira': 80 };
+  const PL = { 'fatia': 'fatias', 'unidade': 'unidades', 'colher de sopa': 'colheres de sopa', 'colher de sobremesa': 'colheres de sobremesa', 'colher de chá': 'colheres de chá', 'colher de arroz (de servir)': 'colheres de arroz (de servir)', 'copo médio': 'copos médios', 'copo americano': 'copos americanos', 'concha': 'conchas', 'escumadeira': 'escumadeiras', 'bife': 'bifes', 'filé': 'filés', 'pedaço': 'pedaços', 'prato': 'pratos', 'lata': 'latas', 'pote': 'potes', 'xícara de chá': 'xícaras de chá', 'xícara de café': 'xícaras de café', 'porção': 'porções' };
+  function niceLabel(l) {
+    const m = String(l || '').match(/^(\d+(?:\.\d+)?) (.+)$/); if (!m) return l;
+    const q = num(m[1]), u = m[2];
+    return (q === 0.5 ? 'meia' : String(q).replace('.', ',')) + ' ' + (q > 1 && PL[u] ? PL[u] : u);
+  }
   function foodItem(s) {
     s = s.replace(/^(de|do|da|uns|umas|um|uma|o|a|os|as)\s+/, '').trim();
     if (!s) return null;
     let qty = null, unit = null, m;
     if ((m = s.match(/^(\d+(?:\.\d+)?)\s*/))) { qty = num(m[1]); s = s.slice(m[0].length); }
+    let tailUnit = null;
+    if ((qty == null || qty === 1) && (m = s.match(/\s+(?:de\s+)?(\d+(?:\.\d+)?)\s*(ml|mililitros?|g|gr|gramas?|kg|quilos?)\b/))) { qty = num(m[1]); tailUnit = /^m/.test(m[2]) ? 'ml' : /^(kg|q)/.test(m[2]) ? 'kg' : 'g'; s = (s.slice(0, m.index) + s.slice(m.index + m[0].length)).trim(); } // "açaí de 500 ml\"
     const beforeUnit = s;
-    for (const [re, u] of UNITS) { const mm = s.match(re); if (mm) { unit = u; s = s.slice(mm[0].length).replace(/^\s*(de|do|da)\s+/, '').trim(); break; } }
+    if (tailUnit) unit = tailUnit;
+    else for (const [re, u] of UNITS) { const mm = s.match(re); if (mm) { unit = u; s = s.slice(mm[0].length).replace(/^\s*(de|do|da)\s+/, '').trim(); break; } }
     if (!s && unit) { s = beforeUnit; unit = null; }
     s = s.replace(/\b(cozid[oa]s?|grelhad[oa]s?)\b/g, m2 => m2).trim();
     if (!s || s.length < 2) return null;
@@ -84,8 +93,8 @@
     else if (unit === 'kg') grams = (qty || 1) * 1000;
     else if (unit === 'ml') grams = qty || 200;
     else if (unit) { const mm = findM(unit) || (unit === 'fatia' || unit === 'pedaço' ? meas.find(x => x.label.startsWith(unit)) || meas[0] : null); const g = mm ? mm.g : DEFAULT_G[unit] || 100; grams = g * (qty || 1); label = (qty || 1) + ' ' + unit; }
-    else { const u = findM('unidade') || meas[0] || null; if (qty != null && u) { grams = u.g * qty; label = qty + ' ' + (u.label === 'unidade' ? (qty > 1 ? 'unidades' : 'unidade') : u.label); } else if (qty != null && qty > 20) grams = qty; else if (u) { grams = u.g * (qty || 1); label = (qty || 1) + ' ' + u.label; } else { grams = 100 * (qty || 1); label = ''; } }
-    return { ref: f.ref, name: f.name, grams: Math.round(grams), label, heard: s, check: !unit && !findM('unidade') };
+    else { const u = (f.kcal >= 600 ? findM('colher de chá') : null) || findM('unidade') || findM('fatia') || findM('colher de sopa') || findM('porção') || findM('copo') || meas.slice().sort((a, b) => Math.abs(a.g - 60) - Math.abs(b.g - 60))[0] || null; if (qty != null && u) { grams = u.g * qty; label = qty + ' ' + (u.label === 'unidade' ? (qty > 1 ? 'unidades' : 'unidade') : u.label); } else if (qty != null && qty > 20) grams = qty; else if (u) { grams = u.g * (qty || 1); label = (qty || 1) + ' ' + u.label; } else { grams = 100 * (qty || 1); label = ''; } }
+    return { ref: f.ref, name: f.name, grams: Math.round(grams), label: niceLabel(label), heard: s, check: !unit && !findM('unidade') };
   }
   // "arroz feijao frango" sem separador vira três itens
   function splitBySyn(part) {
@@ -108,13 +117,14 @@
     else if (!/^\d/.test(c)) return null;
     for (let i = 0; i < 4; i++) body = body.replace(/^\s*(hoje|agora|eu|de manha|a tarde|a noite|no cafe|no almoco|no jantar|de lanche|comi|almocei|jantei|lanchei|tomei|bebi|:)\b\s*:?/, '').trim();
     let meal = /cafe da manha|manha/.test(c) ? 'cafe' : /almo/.test(c) ? 'almoco' : /janta|jantei|noite/.test(c) ? 'jantar' : /lanch|beliscou|belisquei|tarde/.test(c) ? 'lanche' : null;
+    const explicit = !!meal;
     if (!meal) meal = hour < 10.5 ? 'cafe' : hour < 15 ? 'almoco' : hour < 18.5 ? 'lanche' : 'jantar';
     const parts = [];
     body.split(/\s*(?:,|\s+e\s+|\s+com\s+|\s+mais\s+)\s*/).filter(Boolean).forEach(p => splitBySyn(p).forEach(x => parts.push(x)));
     const items = [], miss = [];
     parts.forEach(p => { const it = foodItem(p.trim()); if (!it) return; if (it.miss) miss.push(it.miss); else items.push(it); });
     if (!items.length && !miss.length) return null;
-    return { type: 'food', meal, items, miss };
+    return { type: 'food', meal, items, miss, explicit };
   }
   function workout(c) {
     if (!/(treino|treinar|exercicio|malhar|circuito)/.test(c) || !/(monta|monte|cria|crie|gera|gere|quero|faz|faca|me da|preciso|bora|vamos)/.test(c)) return null;
@@ -176,9 +186,13 @@
     const wk = workout(t); if (wk) return [wk];
     const pf = /(anos|altura|metro|centimetro)/.test(t) ? profile(t) : null; if (pf) return [pf];
     const out = [];
+    let prev = null;
     splitClauses(t).forEach(c => {
-      const a = sleep(c) || weight(c) || water(c, cfg) || food(c, hour);
-      if (a) out.push(a);
+      let a = sleep(c) || weight(c) || water(c, cfg) || food(c, hour);
+      // "comi arroz, feijão e frango": o que vem depois da vírgula continua sendo comida
+      if (!a && prev && prev.type === 'food') { a = food('comi ' + c, hour); if (a) a.meal = prev.meal; }
+      else if (a && a.type === 'food' && !a.explicit && prev && prev.type === 'food') a.meal = prev.meal; // "...e tomei café" continua no café da manhã
+      if (a) { out.push(a); prev = a; }
     });
     // junta comidas da mesma refeição
     const merged = []; out.forEach(a => { const last = merged[merged.length - 1]; if (a.type === 'food' && last && last.type === 'food' && last.meal === a.meal) { last.items = last.items.concat(a.items); last.miss = last.miss.concat(a.miss); } else merged.push(a); });
