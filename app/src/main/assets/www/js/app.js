@@ -532,6 +532,7 @@
     <div class="card"><span class="lbl">Lembretes</span>
       <div class="li"><div class="grow"><div class="t">Modo insistente</div><div class="s">Repete a cada ${R.nagMin} min até você confirmar (até ${R.nagMax} vezes)</div></div><input type="checkbox" class="switch" data-act="rem-intrusive" ${R.intrusive ? 'checked' : ''} aria-label="Modo insistente"></div>
       ${rem('water', 'Beber água', 'A cada ' + R.water.every + ' min, das ' + R.water.start + ' às ' + R.water.end)}
+      <div class="li"><div class="grow"><div class="t">Água sem filtro</div><div class="s">${s.settings.swear !== false ? 'Ligado: os avisos de água vêm com palavrão' : 'Desligado: avisos de água educados'}</div></div><input type="checkbox" class="switch" data-act="swear" ${s.settings.swear !== false ? 'checked' : ''} aria-label="Avisos de água com palavrão"></div>
       <div class="chips">${[30, 45, 60, 90, 120].map(m => `<button type="button" class="chip ${R.water.every === m ? 'on' : ''}" data-act="water-every" data-arg="${m}">${m} min</button>`).join('')}</div>
       <div class="grid2"><div class="field"><label for="rw-s">Acordo</label><input class="input" type="time" id="rw-s" data-rem="water.start" value="${R.water.start}"></div><div class="field"><label for="rw-e">Durmo</label><input class="input" type="time" id="rw-e" data-rem="water.end" value="${R.water.end}"></div></div>
       ${rem('meals', 'Refeições', R.meals.times.map(x => x[1]).join(' · '))}
@@ -565,7 +566,26 @@
   // ---------- lembretes nativos ----------
   function syncReminders() {
     const s = S(), R = s.settings.reminders, g = Store.goals(); const items = [];
-    if (R.water.on) items.push({ id: 1, kind: 'interval', every: R.water.every, start: R.water.start, end: R.water.end, title: 'Hora da água', text: 'Bebe um copo agora. Meta de hoje: ' + fmt(g.water) + ' ml.', action: 'water', ml: s.settings.cupMl });
+    if (R.water.on) {
+      const meta = 'Meta de hoje: ' + fmt(g.water) + ' ml.', cup = s.settings.cupMl;
+      // o Android sorteia uma destas a cada aviso (inclusive nas repetições do modo insistente)
+      const variants = s.settings.swear !== false ? [
+        ['Bebe água nessa porra, krl', 'Um copo de ' + cup + ' ml agora. ' + meta],
+        ['Hora de tomar água, seu filho da puta', 'Levanta e enche esse copo. ' + meta],
+        ['Quer ter pedra no rim, caralho?', 'Bebe água nessa porra. ' + meta],
+        ['Cadê a água, porra?', 'Tá enrolando desde a última vez. Um copo agora. ' + meta],
+        ['Tá seco igual uva passa, caralho', 'Bebe ' + cup + ' ml agora e para de frescura. ' + meta],
+        ['Teu rim mandou avisar: bebe água, porra', 'Ele tá trabalhando dobrado por tua causa. ' + meta],
+        ['Larga esse celular e bebe água, krl', 'Só um copo. Não vai morrer. ' + meta],
+        ['Ô desgraça, a água!', 'Shape não sai com o corpo desidratado, caralho. ' + meta]
+      ] : [
+        ['Hora da água', 'Bebe um copo agora. ' + meta],
+        ['Um copo de água agora', 'Hidratado rende mais no treino. ' + meta],
+        ['Pausa para a água', 'Levanta, enche o copo e volta. ' + meta],
+        ['Seus rins agradecem', 'Bebe ' + cup + ' ml agora. ' + meta]
+      ];
+      items.push({ id: 1, kind: 'interval', every: R.water.every, start: R.water.start, end: R.water.end, title: variants[0][0], text: variants[0][1], variants, icon: 'water', action: 'water', ml: cup });
+    }
     if (R.mewing.on) items.push({ id: 2, kind: 'interval', every: R.mewing.every, start: R.mewing.start, end: R.mewing.end, title: 'Língua no céu da boca', text: 'Lábios fechados, dentes encostando de leve, respira pelo nariz. Queixo para trás.', action: 'ack', nag: false });
     if (R.meals.on) R.meals.times.forEach((m, i) => items.push({ id: 10 + i, kind: 'daily', time: m[1], title: m[0], text: 'Hora de comer. Depois, fala para o app o que você comeu.', action: 'open' }));
     if (R.workout.on) items.push({ id: 20, kind: 'daily', time: R.workout.time, title: 'Treino do dia', text: 'O treino de hoje já está montado. Bora?', action: 'open' });
@@ -729,6 +749,7 @@
       case 'eq': s.eq = s.eq.includes(arg) ? s.eq.filter(x => x !== arg) : s.eq.concat(arg); Store.save(); App.render(); break;
       case 'lim': s.lim = s.lim.includes(arg) ? s.lim.filter(x => x !== arg) : s.lim.concat(arg); Store.save(); App.render(); break;
       case 'rem-toggle': s.settings.reminders[arg].on = t.checked; Store.save(); syncReminders(); break;
+      case 'swear': s.settings.swear = t.checked; Store.save(); syncReminders(); App.render(); App.toast(t.checked ? 'Avisos de água sem filtro' : 'Avisos de água sem palavrão'); break;
       case 'rem-intrusive': s.settings.reminders.intrusive = t.checked; Store.save(); syncReminders(); break;
       case 'water-every': s.settings.reminders.water.every = +arg; Store.save(); syncReminders(); App.render(); break;
       case 'rem-test': if (!UCBridge.testReminder('Teste do Uncrowned', 'Se você viu isso, os lembretes estão funcionando.')) App.toast('Notificações só funcionam no app Android'); break;

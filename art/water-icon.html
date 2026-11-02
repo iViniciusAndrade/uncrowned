@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<!-- Ícone do lembrete de água: copo inclinado 15°, água preta, caveira pirata branca, fundo branco redondo.
+     Renderizar com Playwright: #full (notificação, colorido) e #mask (barra de status, silhueta). -->
+<html><head><meta charset="utf-8"><style>body{margin:0;background:transparent}svg{display:block}</style></head><body>
+<svg id="defs" width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- copo (trapézio com fundo arredondado) -->
+    <path id="glass" d="M150 96 L362 96 L334 404 Q331 428 306 428 L206 428 Q181 428 178 404 Z"/>
+    <clipPath id="inside"><path d="M163 108 L349 108 L322 398 Q320 414 304 414 L208 414 Q192 414 190 398 Z"/></clipPath>
+    <!-- caveira com ossos cruzados -->
+    <g id="bones">
+      <g transform="rotate(38 256 318)"><rect x="168" y="306" width="176" height="24" rx="12"/><circle cx="168" cy="306" r="15"/><circle cx="168" cy="330" r="15"/><circle cx="344" cy="306" r="15"/><circle cx="344" cy="330" r="15"/></g>
+      <g transform="rotate(-38 256 318)"><rect x="168" y="306" width="176" height="24" rx="12"/><circle cx="168" cy="306" r="15"/><circle cx="168" cy="330" r="15"/><circle cx="344" cy="306" r="15"/><circle cx="344" cy="330" r="15"/></g>
+    </g>
+    <path id="head" d="M256 222 C214 222 192 250 192 284 C192 306 203 320 216 328 L216 346 Q216 354 224 354 L288 354 Q296 354 296 346 L296 328 C309 320 320 306 320 284 C320 250 298 222 256 222 Z"/>
+    <g id="holes">
+      <ellipse cx="233" cy="288" rx="16" ry="18"/><ellipse cx="279" cy="288" rx="16" ry="18"/>
+      <path d="M256 304 L247 322 L265 322 Z"/>
+      <rect x="235" y="336" width="5" height="18" rx="2"/><rect x="253" y="336" width="5" height="18" rx="2"/><rect x="271" y="336" width="5" height="18" rx="2"/>
+    </g>
+  </defs>
+</svg>
+
+<!-- colorido: fundo branco redondo, contorno preto, água preta, caveira branca -->
+<svg id="full" width="512" height="512" viewBox="0 0 512 512">
+  <circle cx="256" cy="256" r="256" fill="#fff"/>
+  <g transform="rotate(15 256 262)">
+    <use href="#glass" fill="#fff" stroke="#000" stroke-width="16" stroke-linejoin="round"/>
+    <g clip-path="url(#inside)">
+      <path d="M140 196 Q198 178 256 196 T372 196 L372 440 L140 440 Z" fill="#000"/>
+      <g transform="translate(256 318) scale(.72) translate(-256 -292)"><g fill="#fff"><use href="#bones"/><use href="#head"/></g>
+      <g fill="#000"><use href="#holes"/></g></g>
+    </g>
+  </g>
+</svg>
+
+<!-- silhueta (barra de status): branco = aparece; caveira vazada -->
+<svg id="mask" width="512" height="512" viewBox="0 0 512 512">
+  <defs><mask id="m"><rect width="512" height="512" fill="#fff"/><g transform="rotate(15 256 262)"><g transform="translate(256 318) scale(.72) translate(-256 -292)"><g fill="#000"><use href="#bones"/><use href="#head"/></g><g fill="#fff"><use href="#holes"/></g></g></g></mask></defs>
+  <g transform="rotate(15 256 262)" mask="url(#m)">
+    <use href="#glass" fill="none" stroke="#fff" stroke-width="34" stroke-linejoin="round"/>
+    <g clip-path="url(#inside)"><path d="M140 196 Q198 178 256 196 T372 196 L372 440 L140 440 Z" fill="#fff"/></g>
+  </g>
+</svg>
+</body></html>

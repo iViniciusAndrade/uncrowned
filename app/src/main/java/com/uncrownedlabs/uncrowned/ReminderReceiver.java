@@ -46,8 +46,13 @@ public class ReminderReceiver extends BroadcastReceiver {
         int nagMax = cfg.optInt("nagMax", 3), nagMin = cfg.optInt("nagMin", 10);
         String title = o.optString("title", "Uncrowned");
         String text = o.optString("text", "");
+        org.json.JSONArray vs = o.optJSONArray("variants"); // sorteia uma frase diferente a cada aviso
+        if (vs != null && vs.length() > 0) {
+            org.json.JSONArray v = vs.optJSONArray(new java.util.Random().nextInt(vs.length()));
+            if (v != null && v.length() >= 2) { title = v.optString(0, title); text = v.optString(1, text); }
+        }
         if (nag > 0) title = title + " (de novo)";
-        show(c, id, title, text, o.optString("action", "open"), o.optInt("ml", 250), intrusive);
+        show(c, id, title, text, o.optString("action", "open"), o.optInt("ml", 250), intrusive, o.optString("icon", ""));
         if (intrusive && nag < nagMax) Reminders.set(c, id, nag + 1, System.currentTimeMillis() + nagMin * 60000L);
     }
 
@@ -64,7 +69,9 @@ public class ReminderReceiver extends BroadcastReceiver {
         nm.createNotificationChannel(ch);
     }
 
-    static void show(Context c, int id, String title, String text, String action, int ml, boolean intrusive) {
+    static void show(Context c, int id, String title, String text, String action, int ml, boolean intrusive) { show(c, id, title, text, action, ml, intrusive, ""); }
+    static void show(Context c, int id, String title, String text, String action, int ml, boolean intrusive, String icon) {
+        boolean water = "water".equals(icon) || "water".equals(action);
         channel(c);
         Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra("tab", "water".equals(action) ? "hoje" : id >= 10 && id < 20 ? "comida" : id == 20 ? "treino" : "hoje");
@@ -74,7 +81,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         Intent sn = new Intent(c, ReminderReceiver.class).setAction("uc.snooze." + id).putExtra("id", id);
         PendingIntent pSn = PendingIntent.getBroadcast(c, 6000 + id, sn, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = new Notification.Builder(c, CH)
-                .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                .setSmallIcon(water ? R.drawable.ic_stat_water : android.R.drawable.ic_popup_reminder)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
@@ -84,6 +91,7 @@ public class ReminderReceiver extends BroadcastReceiver {
                 .setColor(0xFFFFFFFF)
                 .addAction(new Notification.Action.Builder(null, "water".equals(action) ? "Bebi " + ml + " ml" : "Feito", pAck).build())
                 .addAction(new Notification.Action.Builder(null, "Adiar 10 min", pSn).build());
+        if (water) { try { b.setLargeIcon(android.graphics.BitmapFactory.decodeResource(c.getResources(), R.drawable.ic_water_large)); } catch (Exception ignored) { } }
         if (intrusive) b.setOnlyAlertOnce(false);
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         try { nm.notify(id, b.build()); } catch (SecurityException ignored) { }

@@ -20,7 +20,8 @@
         mewing: { on: true, every: 120, start: '09:00', end: '21:00' },
         weigh: { on: false, time: '07:00' }
       },
-      ebike: false
+      ebike: false,
+      swear: true // lembretes de água sem filtro (palavrão); desliga em Perfil > Lembretes
     },
     days: {},
     custom: {},
