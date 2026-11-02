@@ -5,9 +5,11 @@
   // integral pelo IBGE (POF 2008-2009, mesma fonte dos genéricos do app) e desnatado pela TBCA/USP. kcal, P, C, G por 100 g.
   const FILL = { 458: [60, 3.22, 4.52, 3.25, 'IBGE POF 2008-2009'], 457: [37, 3.12, 5.14, 0.4, 'TBCA/USP'] };
   const T = (window.TACO || []).map(r => { const fx = FILL[r[0]]; return { ref: 't:' + r[0], id: r[0], name: r[1], cat: r[2], kcal: fx ? fx[0] : r[3], p: fx ? fx[1] : r[4], c: fx ? fx[2] : r[5], g: fx ? fx[3] : r[6], f: r[7], na: r[8], src: 'TACO', vsrc: fx ? fx[4] : null, key: norm(r[1]) }; })
-    .filter(f => f.kcal != null || /^sal\b/.test(f.key)); // sem calorias na tabela (coco verde, iogurte de abacaxi): fora da busca, para não anotar 0 kcal
+;
+  const HIDDEN = T.filter(f => f.kcal == null && !/^sal\b/.test(f.key)); // sem calorias na tabela (coco verde, iogurte de abacaxi): fora da busca, para não anotar 0 kcal
+  HIDDEN.forEach(f => T.splice(T.indexOf(f), 1));
   (window.GENERICOS || []).forEach(r => T.push({ ref: 'g:' + r[0], id: r[0], name: r[1], cat: 'Genéricos', kcal: r[2], p: r[3], c: r[4], g: r[5], f: r[6], na: r[7], src: 'IBGE', measures: (r[8] || []).map(m => ({ label: m[0], g: m[1] })), key: norm(r[1]) }));
-  const BY = {}; T.forEach(f => BY[f.ref] = f);
+  const BY = {}; T.concat(HIDDEN).forEach(f => BY[f.ref] = f); // registros antigos continuam abrindo
   const MED = window.TACO_MEDIDAS || {};
 
   // alimento padrão quando a pessoa fala só o nome popular (busca pelo início do nome da TACO)
@@ -156,5 +158,23 @@
   function saveRemote(f) { if (Store.S.custom[f.ref]) return Store.S.custom[f.ref]; const o = Object.assign({}, f); delete o.remote; return addCustom(o); }
   // corrige (ou cria) um produto com os valores do rótulo. Mantém o mesmo ref/código para o scanner achar depois.
   function fromLabel(o) { return addCustom(Object.assign({ src: 'Rótulo', cat: 'Industrializados' }, o)); }
-  window.Food = { fromLabel, norm, T, get, search, guess, measures, calc, entry, touchRecent, addCustom, lookupBarcode, byBarcode, SYNR, searchOnline, saveRemote };
+  // confere se os números por 100 g fazem sentido. Devolve lista de avisos em português.
+  // hardOnly: só o que é fisicamente impossível (usado no aviso do produto); o resto vira "confira" no formulário.
+  function sanity(v, unit, hardOnly) {
+    const w = [], n = x => +x || 0, u = unit || 'g', sum = n(v.p) + n(v.c) + n(v.g); // carboidrato da TACO e de rótulos já inclui ou exclui a fibra: não soma fibra
+    if (v.kcal != null && n(v.kcal) > 900) w.push('Mais de 900 kcal em 100 ' + u + ' não existe (nem óleo passa de 900). Devem ser valores da porção, não de 100 ' + u + '.');
+    if (sum > 102) w.push('Proteína + carboidrato + gordura somam ' + Math.round(sum) + ' g em 100 ' + u + ', o que não cabe. Confira se não são valores da porção.');
+    if (hardOnly) return w;
+    const est = 4 * n(v.p) + 4 * n(v.c) + 9 * n(v.g), k = n(v.kcal);
+    // mais caloria que os macros explicam (falta um número, ou tem álcool); ou bem menos (vírgula errada, valor de outra coluna)
+    if (v.kcal != null && est > 0 && (k > est + Math.max(40, est * 0.5) || (est > 30 && k < est * 0.5))) w.push('As calorias (' + Math.round(k) + ') não batem com os macros (dá ' + Math.round(est) + ' kcal pela conta 4·P + 4·C + 9·G). Confira um dos números' + (k > est ? ' (bebida alcoólica é normal ter mais)' : '') + '.');
+    if (v.na != null && n(v.na) > 40000) w.push('Sódio acima de 40 g por 100 ' + u + ': deve ter sido digitado errado (o campo é em mg).');
+    return w;
+  }
+  // depois de corrigir um produto, refaz as contas do que já foi anotado com ele (os valores antigos estavam errados)
+  function recalcEntries(f) {
+    let n = 0; Object.values(Store.S.days).forEach(d => (d.meals || []).forEach((e, i) => { if (e.ref !== f.ref) return; const c = calc(f, e.grams); d.meals[i] = Object.assign({}, e, c, { name: f.name }); n++; }));
+    if (n) Store.save(); return n;
+  }
+  window.Food = { fromLabel, sanity, recalcEntries, norm, T, get, search, guess, measures, calc, entry, touchRecent, addCustom, lookupBarcode, byBarcode, SYNR, searchOnline, saveRemote };
 })();

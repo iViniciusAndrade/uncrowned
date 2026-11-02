@@ -140,7 +140,7 @@
   function todayAranha() { const wd = new Date().getDay(); const map = [6, 0, 1, 2, 3, 4, 5]; return EXDB.ARANHA.week[map[wd]]; }
   function vHoje() {
     const s = S(), g = Store.goals(), k = Store.dkey(), d = Store.day(k), t = Store.totals(k);
-    const left = g.kcal - t.kcal + (d.kcalOut || 0);
+    const bud = Store.budget(k), left = bud.kcal - t.kcal;
     const p28 = nextP28(), ar = todayAranha();
     const arSess = EXDB.ARANHA.sessions[ar[1]](s.aranha.level);
     const jawToday = !!s.jaw.log[k];
@@ -152,7 +152,7 @@
       <div><div class="row between small"><span>Proteína</span><span class="num mute">${fmt(t.p)} / ${g.prot} g</span></div>${bar(t.p, g.prot)}</div>
       <div><div class="row between small"><span>Carboidrato</span><span class="num mute">${fmt(t.c)} / ${g.carb} g</span></div>${bar(t.c, g.carb)}</div>
       <div><div class="row between small"><span>Gordura</span><span class="num mute">${fmt(t.g)} / ${g.fat} g</span></div>${bar(t.g, g.fat)}</div>
-      <span class="tiny mute num">${fmt(t.kcal)} comidas · ${fmt(d.kcalOut || 0)} gastas no treino · meta ${fmt(g.kcal)}</span></div></div></div>
+      <span class="tiny mute num">${fmt(t.kcal)} comidas · meta ${fmt(bud.kcal)}${bud.out ? ' · treino ' + fmt(bud.out) + ' kcal' + (bud.counted ? ' (+' + fmt(bud.bonus) + ' liberadas)' : ' (já previsto na meta)') : ''}</span></div></div></div>
     <div class="card"><div class="row between"><span class="lbl">Água</span><span class="tiny mute num">meta ${fmt(g.water)} ml</span></div>
       <div class="row between"><span class="big">${fmt(d.water)}<span class="mute" style="font-size:1rem"> ml</span></span><span class="mute num">${Math.min(100, Math.round(d.water / g.water * 100))}%</span></div>${bar(d.water, g.water)}
       <div class="grid3"><button class="btn sm" type="button" data-act="water" data-arg="${s.settings.cupMl}">+ copo</button><button class="btn sm" type="button" data-act="water" data-arg="${s.settings.bottleMl}">+ garrafa</button><button class="btn sm" type="button" data-act="water-custom">Outro</button></div>
@@ -330,7 +330,7 @@
         ${es.length ? `<div class="list">${es.map(e => `<div class="li click" data-act="entry" data-arg="${e.id}"><div class="grow"><div class="t">${esc(e.name)}</div><div class="s num">${e.label ? esc(e.label) + ' · ' : ''}${fmt(e.grams)} g · P ${fmt(e.p, 1)} · C ${fmt(e.c, 1)} · G ${fmt(e.g, 1)}</div></div><span class="kcal">${fmt(e.kcal)}</span></div>`).join('')}</div>` : ''}</div>`;
     }).join('');
     return `<div class="row between"><button class="icon-btn" type="button" data-act="food-day" data-arg="-1" aria-label="Dia anterior"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><h2>${dateLabel(k)}</h2><button class="icon-btn" type="button" data-act="food-day" data-arg="1" aria-label="Próximo dia" ${k >= Store.dkey() ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>
-    <div class="card"><div class="row" style="gap:14px">${ring(t.kcal, g.kcal + (d.kcalOut || 0), 112, fmt(t.kcal), 'de ' + fmt(g.kcal + (d.kcalOut || 0)))}<div class="stack" style="flex:1;gap:8px">
+    <div class="card"><div class="row" style="gap:14px">${(() => { const b = Store.budget(k); return ring(t.kcal, b.kcal, 112, fmt(t.kcal), 'de ' + fmt(b.kcal)); })()}<div class="stack" style="flex:1;gap:8px">
       ${[['Proteína', t.p, g.prot], ['Carboidrato', t.c, g.carb], ['Gordura', t.g, g.fat], ['Fibra', t.f, g.fiber]].map(([l, v, m]) => `<div><div class="row between tiny"><span>${l}</span><span class="num mute">${fmt(v)} / ${m} g</span></div>${bar(v, m)}</div>`).join('')}</div></div>
       <div class="grid2"><button class="btn sm" type="button" data-act="food-add" data-arg="">Buscar</button><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button><button class="btn sm" type="button" data-act="mic-ask" data-arg="Diga o que comeu. Ex.: no almoço comi arroz, feijão e um bife">Falar</button></div></div>
     ${sections}
@@ -387,6 +387,7 @@
       <div class="field"><label for="pt-meal">Refeição</label><select class="input" id="pt-meal">${MEALS.map(([m, l]) => `<option value="${m}" ${(existing ? existing.meal : meal) === m ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="grid2"><button class="btn" type="button" id="pt-fav">${fav ? 'Tirar dos favoritos' : 'Favoritar'}</button><button class="btn pri" type="button" id="pt-ok">${existing ? 'Salvar' : 'Adicionar'}</button></div>
       ${existing ? '<button class="btn danger block" type="button" id="pt-del">Remover</button>' : ''}<p class="tiny mute">Por 100 ${un}: ${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} · C ${fmt(f.c, 1)} · G ${fmt(f.g, 1)}${f.f != null ? ' · fibra ' + fmt(f.f, 1) : ''}${f.na != null ? ' · sódio ' + fmt(f.na) + ' mg' : ''}</p>
+      ${branded && Food.sanity(f, un, true).length ? `<div class="note warn">Os números deste produto parecem errados: ${esc(Food.sanity(f, un, true)[0])}</div>` : ''}
       ${branded ? `<div class="card tight"><span class="lbl">${f.src === 'Open Food Facts' ? 'Dados da internet podem ter erro' : 'Valores do rótulo'}</span><p class="tiny mute">${f.src === 'Open Food Facts' ? 'Esses números vêm do Open Food Facts, preenchido por voluntários. Confira com a tabela da embalagem.' : 'Se algum número estiver diferente da embalagem, corrija aqui.'}</p><div class="grid2"><button class="btn sm" type="button" id="pt-photo">Conferir com foto</button><button class="btn sm ghost" type="button" id="pt-edit">Editar valores</button></div></div>` : ''}`);
     let unitG = null;
     const upd = () => { const c = Food.calc(f, grams); $('#pt-kcal').textContent = fmt(c.kcal); $('#pt-mac').innerHTML = `<div class="macro"><span class="mute tiny">Proteína</span><div class="v">${fmt(c.p, 1)} g</div></div><div class="macro"><span class="mute tiny">Carbo</span><div class="v">${fmt(c.c, 1)} g</div></div><div class="macro"><span class="mute tiny">Gordura</span><div class="v">${fmt(c.g, 1)} g</div></div>`; };
@@ -437,11 +438,23 @@
       const pg = g('#cf-pg');
       let k = 1;
       if (base === 'porcao') { if (!pg) return App.toast('Informe o tamanho da porção'); k = 100 / pg; }
+      // conferência dos números (por 100 g): avisa uma vez; tocar de novo salva assim mesmo
+      const per = { kcal: g('#cf-k') * k, p: (g('#cf-p') || 0) * k, c: (g('#cf-c') || 0) * k, g: (g('#cf-g') || 0) * k, f: (g('#cf-f') || 0) * k, na: g('#cf-na') != null ? g('#cf-na') * k : null };
+      const sig = JSON.stringify(per), warns = Food.sanity(per, unit);
+      if (warns.length && App._cfWarned !== sig) {
+        App._cfWarned = sig; const box = $('#cf-warn') || Object.assign(document.createElement('div'), { id: 'cf-warn' });
+        box.innerHTML = warns.map(w => `<div class="note warn">${esc(w)}</div>`).join('') + '<p class="tiny mute">Se está igual à embalagem, toque em salvar de novo.</p>';
+        $('#cf-ok').before(box); box.scrollIntoView({ block: 'center', behavior: 'smooth' }); UCBridge.vibrate(60); return;
+      }
+      App._cfWarned = null;
       const meas = (o.measures || []).filter(m => !/^porção/.test(m.label));
       if (pg) meas.unshift({ label: 'porção do rótulo (' + fmt(pg, 1) + ' ' + unit + ')', g: pg });
       const f = Food.addCustom({ ref: o.ref, name: n, brand: $('#cf-b').value.trim(), barcode: $('#cf-code').value.trim() || null, kcal: Math.round(g('#cf-k') * k * 10) / 10, p: (g('#cf-p') || 0) * k, c: (g('#cf-c') || 0) * k, g: (g('#cf-g') || 0) * k, f: g('#cf-f') != null ? g('#cf-f') * k : null, na: g('#cf-na') != null ? Math.round(g('#cf-na') * k) : null, measures: meas, src: o.fromPhoto || o.fix ? 'Rótulo' : 'Manual', cat: 'Industrializados' });
       f.unit = unit; Store.save();
-      App.toast(o.fix ? 'Corrigido com o rótulo' : 'Alimento salvo'); portion(f.ref, o.meal || fs.meal || mealNow());
+      const upd = o.ref ? Food.recalcEntries(f) : 0;
+      App.toast(o.fix ? 'Corrigido com o rótulo' + (upd ? ' · ' + upd + (upd > 1 ? ' registros recalculados' : ' registro recalculado') : '') : 'Alimento salvo', 2800);
+      if (o.fix) { App.closeSheet(); App.render(); return; }
+      portion(f.ref, o.meal || fs.meal || mealNow());
     };
   }
   // foto da tabela nutricional → leitura no celular → formulário já preenchido
@@ -462,6 +475,7 @@
         const L = { kcal: 'calorias', p: 'proteína', c: 'carboidrato', g: 'gordura', f: 'fibra', na: 'sódio' };
         const warn = r.warn.slice();
         if (diff.length) warn.unshift('A foto mostra valores diferentes dos que estavam salvos em: ' + diff.map(k => L[k] + ' (' + fmt(pre.vals[k], 1) + ' → ' + fmt(r.per100[k], 1) + ')').join(', ') + '.');
+        Food.sanity(vals, r.unit || pre.unit || 'g').forEach(w => warn.push(w));
         if (missing.length) warn.push('Não li: ' + missing.map(k => L[k]).join(', ') + '. Preencha ou deixe vazio se a tabela não tiver.');
         customForm(Object.assign({}, pre, { vals, missing, portion: r.portion || pre.portion, unit: r.unit || pre.unit, warn, fromPhoto: true }));
       } catch (e) {
@@ -525,7 +539,7 @@
       <div class="field"><label>Ritmo</label><div class="seg">${[['lento', 'Tranquilo'], ['normal', 'Normal'], ['rapido', 'Agressivo']].map(([v, l]) => `<button type="button" class="${p.pace === v ? 'on' : ''}" data-act="pf-set" data-key="pace" data-arg="${v}">${l}</button>`).join('')}</div></div>
       <div class="field"><label for="pf-act">Atividade</label><select class="input" id="pf-act" data-pf="activity">${Object.entries(Store.ACT).map(([k, v]) => `<option value="${k}" ${p.activity === k ? 'selected' : ''}>${v[1]}</option>`).join('')}</select></div></div>
     <div class="card"><span class="lbl">Metas diárias</span><div class="grid2"><div class="tile"><span class="lbl">Calorias</span><span class="v">${fmt(g.kcal)}</span><span class="tiny mute">gasto estimado ${fmt(g.tdee)}</span></div><div class="tile"><span class="lbl">Proteína</span><span class="v">${g.prot} g</span></div><div class="tile"><span class="lbl">Carboidrato</span><span class="v">${g.carb} g</span></div><div class="tile"><span class="lbl">Gordura</span><span class="v">${g.fat} g</span></div><div class="tile"><span class="lbl">Água</span><span class="v">${fmt(g.water)} ml</span></div><div class="tile"><span class="lbl">Basal</span><span class="v">${fmt(g.bmr)}</span><span class="tiny mute">kcal em repouso</span></div></div>
-      <p class="tiny mute">Gasto basal pela fórmula de Mifflin-St Jeor, multiplicado pelo nível de atividade. Proteína de 1,6 a 2,0 g por kg (com sobrepeso, sobre o peso de IMC 25). Água: 35 ml por kg. Para perder, o app tira 15 a 25% do gasto e nunca desce de 1.500 kcal (1.200 para mulheres).</p>
+      <p class="tiny mute">Gasto basal pela fórmula de Mifflin-St Jeor, multiplicado pelo nível de atividade. Proteína de 1,6 a 2,0 g por kg (com sobrepeso, sobre o peso de IMC 25). Água: 35 ml por kg. Para perder, o app tira 15 a 25% do gasto e nunca desce de 1.500 kcal (1.200 para mulheres). O gasto dos treinos já entra pelo nível de atividade, então não volta como caloria extra (só no perfil sedentário, que libera o gasto líquido do treino).</p>
       <button class="btn sm" type="button" data-act="goals-edit">Ajustar metas na mão</button></div>
     <div class="card"><span class="lbl">Equipamento que eu tenho</span><div class="chips">${Object.entries(EXDB.EQ_LABEL).map(([k, l]) => `<button type="button" class="chip ${s.eq.includes(k) ? 'on' : ''}" data-act="eq" data-arg="${k}">${l}</button>`).join('')}</div>
       <span class="lbl">Evitar exercícios que forcem</span><div class="chips">${[['joelho', 'Joelho'], ['ombro', 'Ombro'], ['lombar', 'Lombar'], ['punho', 'Punho']].map(([k, l]) => `<button type="button" class="chip ${s.lim.includes(k) ? 'on' : ''}" data-act="lim" data-arg="${k}">${l}</button>`).join('')}</div></div>
@@ -726,7 +740,12 @@
       case 'food-day': App.foodDate = shift(App.foodDate || Store.dkey(), +arg); if (App.foodDate > Store.dkey()) App.foodDate = Store.dkey(); App.render(); break;
       case 'food-add': foodSearch(arg); break;
       case 'pick': portion(arg, fs.meal || mealNow()); break;
-      case 'entry': { const d = Store.day(App.foodDate || Store.dkey()); const en = d.meals.find(x => x.id === arg); if (en) portion(en.ref, en.meal, en); break; }
+      case 'entry': {
+        const d = Store.day(App.foodDate || Store.dkey()); const en = d.meals.find(x => x.id === arg); if (!en) break;
+        // alimento que não existe mais (ex.: alimento criado e depois apagado): monta um a partir do próprio registro
+        if (!Food.get(en.ref) && !(App._remote && App._remote[en.ref])) { const r = en.grams ? 100 / en.grams : 0; Store.S.custom[en.ref] = { ref: en.ref, name: en.name, kcal: Math.round(en.kcal * r * 10) / 10, p: en.p * r, c: en.c * r, g: en.g * r, f: en.f != null ? en.f * r : null, src: 'Registro antigo', measures: [], key: Food.norm(en.name), brand: '' }; Store.save(); }
+        portion(en.ref, en.meal, en); break;
+      }
       case 'scan': scan(); break;
       case 'photo-label': photoLabel({ meal: fs.meal || mealNow() }); break;
       case 'fs-retry': e.preventDefault(); fs.err = false; online(); break;

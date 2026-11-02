@@ -77,12 +77,20 @@
     const refW = bmi > 27 ? 25 * Math.pow(h / 100, 2) : w;
     const protPerKg = p.goal === 'manter' ? 1.6 : 2.0;
     const prot = Math.round(refW * protPerKg);
-    const fat = Math.round(Math.max(0.6 * w, kcal * 0.25 / 9));
+    const fat = Math.round(Math.max(0.6 * refW, kcal * 0.25 / 9)); // mínimo de gordura sobre o peso de referência (em obesidade, 0,6 g × peso total espreme o carboidrato)
     const carb = Math.max(50, Math.round((kcal - prot * 4 - fat * 9) / 4));
-    const water = Math.round(w * 35 / 50) * 50; // 35 ml por kg
+    const water = Math.min(4500, Math.max(1500, Math.round(refW * 35 / 50) * 50)); // 35 ml por kg (do peso de referência em obesidade), entre 1,5 e 4,5 L
     return { bmr: Math.round(bmr), tdee: Math.round(tdee), kcal, prot, fat, carb, water, fiber: p.sex === 'f' ? 25 : 30, bmi: Math.round(bmi * 10) / 10 };
   }
   function goals() { if (!S.goals && S.profile) S.goals = calcGoals(S.profile); return S.goals || { kcal: 2000, prot: 120, fat: 60, carb: 230, water: 2500, fiber: 30, tdee: 2000 }; }
+  // Quanto dá para comer no dia. A meta já usa o nível de atividade do perfil (que inclui os treinos da semana),
+  // então o gasto do treino NÃO volta como caloria extra — senão conta duas vezes. Só no perfil sedentário
+  // o treino libera o gasto líquido (bruto menos o que o corpo gastaria parado, ~80% do bruto).
+  function budget(k) {
+    const g = goals(), out = day(k).kcalOut || 0, sed = S.profile && S.profile.activity === 'sed';
+    const bonus = sed ? Math.round(out * 0.8) : 0;
+    return { kcal: g.kcal + bonus, bonus, out, counted: sed };
+  }
   function totals(k) {
     const d = day(k); const t = { kcal: 0, p: 0, c: 0, g: 0, f: 0 };
     d.meals.forEach(e => { t.kcal += e.kcal || 0; t.p += e.p || 0; t.c += e.c || 0; t.g += e.g || 0; t.f += e.f || 0; });
@@ -100,6 +108,6 @@
   function streak(test) { let n = 0; const d = new Date(); if (!test(dkey(d))) d.setDate(d.getDate() - 1); while (test(dkey(d))) { n++; d.setDate(d.getDate() - 1); } return n; }
 
   load();
-  window.Store = { get S() { return S; }, save, flush, dkey, day, age, calcGoals, goals, totals, weightNow, logWeight, addWater, streak, ACT, reset() { S = DEF(); flush(); }, replace(obj) { S = Object.assign(DEF(), obj); flush(); } };
+  window.Store = { get S() { return S; }, save, flush, dkey, day, age, calcGoals, goals, budget, totals, weightNow, logWeight, addWater, streak, ACT, reset() { S = DEF(); flush(); }, replace(obj) { S = Object.assign(DEF(), obj); flush(); } };
   document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
 })();

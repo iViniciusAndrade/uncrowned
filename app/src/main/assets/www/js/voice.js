@@ -32,6 +32,11 @@
   function water(c, cfg) {
     if (!/(agua|h2o)/.test(c) && !/\b(tomei|bebi)\b/.test(c)) return null;
     if (!/agua/.test(c) && /(leite|cafe|suco|refri|cerveja|whey|cha|iogurte|vitamina)/.test(c)) return null;
+    if (/agua de coco|agua tonica|agua com gas e/.test(c)) return null; // é bebida com caloria, vai para comida
+    if (!/agua/.test(c)) { // "bebi uma garrafa de coca": se sobrar o nome de um alimento, não é água
+      const rest = c.replace(/\b(tomei|bebi|hoje|agora|eu|um|uma|uns|umas|de|do|da)\b/g, ' ').replace(/\d+(\.\d+)?|\b(copos?|copao|garrafas?|garrafinhas?|latas?|ml|mililitros?|litros?|l)\b/g, ' ').replace(/\s+/g, ' ').trim();
+      if (rest.length >= 3 && Food.guess(rest)) return null;
+    }
     let m;
     if ((m = c.match(new RegExp(NUMRE + '\\s*(ml|mililitros?)')))) return { type: 'water', ml: Math.round(num(m[1])) };
     if ((m = c.match(new RegExp(NUMRE + '\\s*(l|litros?)\\b')))) return { type: 'water', ml: Math.round(num(m[1]) * 1000) };
@@ -60,12 +65,13 @@
     return { type: 'weight', kg: v };
   }
   const UNITS = [
-    [/^(g|gr|gramas?)\b/, 'g'], [/^(kg|quilos?)\b/, 'kg'], [/^(ml|mililitros?)\b/, 'ml'],
-    [/^colher(?:es)? de (?:arroz|servir)(?= \S)/, 'colher de arroz (de servir)'], [/^colher(?:es)? de sopa|^colher(?:es)?(?! de (?:cha|sobremesa))/, 'colher de sopa'], [/^colher(?:es)? de sobremesa/, 'colher de sobremesa'], [/^colher(?:es)? de cha/, 'colher de chá'],
-    [/^conchas?/, 'concha'], [/^escumadeiras?/, 'escumadeira'], [/^fatias?\b/, 'fatia'], [/^pedacos?\b/, 'pedaço'], [/^copos? americanos?/, 'copo americano'], [/^copos?/, 'copo médio'], [/^xicaras?( de cha)?/, 'xícara de chá'], [/^xicaras? de cafe|^cafezinhos?/, 'xícara de café'],
-    [/^unidades?|^un\b/, 'unidade'], [/^bifes?\b/, 'bife'], [/^files?\b/, 'filé'], [/^pratos?/, 'prato'], [/^porc(?:ao|oes)/, 'porção'], [/^latas?/, 'lata'], [/^potes?/, 'pote']
+    [/^(g|gr|gramas?)\b/, 'g'], [/^(kg|quilos?)\b/, 'kg'], [/^(ml|mililitros?)\b/, 'ml'], [/^(l|litros?)\b/, 'litro'],
+    [/^colher(?:es)? de servir|^colher(?:es)? de arroz(?= \S)/, 'colher de arroz (de servir)'], [/^colher(?:es)? de sopa|^colher(?:es)?(?! de (?:cha|sobremesa))/, 'colher de sopa'], [/^colher(?:es)? de sobremesa/, 'colher de sobremesa'], [/^colher(?:es)? de cha/, 'colher de chá'],
+    [/^conchas?/, 'concha'], [/^escumadeiras?/, 'escumadeira'], [/^fatias?\b/, 'fatia'], [/^pedacos?\b/, 'pedaço'], [/^copos? americanos?/, 'copo americano'], [/^copos?/, 'copo médio'], [/^xicaras? de cafe|^cafezinhos?/, 'xícara de café'], [/^xicaras?( de cha)?/, 'xícara de chá'],
+    [/^unidades?|^un\b/, 'unidade'], [/^bifes?\b/, 'bife'], [/^files?\b/, 'filé'], [/^pratos?/, 'prato'], [/^porc(?:ao|oes)/, 'porção'], [/^latas?/, 'lata'], [/^(garrafas?|garrafinhas?)/, 'garrafa'], [/^potes?/, 'pote']
   ];
-  const DEFAULT_G = { 'copo médio': 240, 'copo americano': 150, 'xícara de chá': 200, 'xícara de café': 50, 'colher de sopa': 15, 'colher de sobremesa': 10, 'colher de chá': 5, 'concha': 120, 'fatia': 25, 'pedaço': 60, 'prato': 300, 'lata': 350, 'pote': 170, 'bife': 100, 'filé': 100, 'porção': 100, 'colher de arroz (de servir)': 45, 'escumadeira': 80 };
+  const DEFAULT_G_EXTRA = { garrafa: 600 };
+  const DEFAULT_G = { ...DEFAULT_G_EXTRA, 'copo médio': 240, 'copo americano': 150, 'xícara de chá': 200, 'xícara de café': 50, 'colher de sopa': 15, 'colher de sobremesa': 10, 'colher de chá': 5, 'concha': 120, 'fatia': 25, 'pedaço': 60, 'prato': 300, 'lata': 350, 'pote': 170, 'bife': 100, 'filé': 100, 'porção': 100, 'colher de arroz (de servir)': 45, 'escumadeira': 80 };
   const PL = { 'fatia': 'fatias', 'unidade': 'unidades', 'colher de sopa': 'colheres de sopa', 'colher de sobremesa': 'colheres de sobremesa', 'colher de chá': 'colheres de chá', 'colher de arroz (de servir)': 'colheres de arroz (de servir)', 'copo médio': 'copos médios', 'copo americano': 'copos americanos', 'concha': 'conchas', 'escumadeira': 'escumadeiras', 'bife': 'bifes', 'filé': 'filés', 'pedaço': 'pedaços', 'prato': 'pratos', 'lata': 'latas', 'pote': 'potes', 'xícara de chá': 'xícaras de chá', 'xícara de café': 'xícaras de café', 'porção': 'porções' };
   function niceLabel(l) {
     const m = String(l || '').match(/^(\d+(?:\.\d+)?) (.+)$/); if (!m) return l;
@@ -82,19 +88,36 @@
     const beforeUnit = s;
     if (tailUnit) unit = tailUnit;
     else for (const [re, u] of UNITS) { const mm = s.match(re); if (mm) { unit = u; s = s.slice(mm[0].length).replace(/^\s*(de|do|da)\s+/, '').trim(); break; } }
-    if (!s && unit) { s = beforeUnit; unit = null; }
+    if (!s && unit) { if (unit === 'xícara de café') s = 'cafe'; else { s = beforeUnit; unit = null; } }
+    // "bife grelhado": se depois da medida sobrou só o preparo, a medida também é o alimento
+    if (unit && /^(frit[oa]s?|cozid[oa]s?|grelhad[oa]s?|assad[oa]s?|acebolad[oa]s?|empanad[oa]s?|a milanesa|mal passad[oa]|ao ponto|bem passad[oa])$/.test(s)) s = beforeUnit;
     s = s.replace(/\b(cozid[oa]s?|grelhad[oa]s?)\b/g, m2 => m2).trim();
     if (!s || s.length < 2) return null;
-    const f = Food.guess(s); if (!f) return { miss: s };
-    let grams = 100, label = '';
+    let f = Food.guess(s); if (!f) return { miss: s };
+    // "3 fatias de pão": pão francês não tem fatia; procura um parecido que tenha a medida falada (pão de forma)
+    if (unit && !/^(g|kg|ml|litro)$/.test(unit) && !Food.measures(f).some(x => x.label.startsWith(unit))) {
+      const head = (f.key || '').split(/[ ,]/)[0];
+      const alt = Food.search(s, 25).find(x => (x.key || '').split(/[ ,]/)[0] === head && Food.measures(x).some(y => y.label.startsWith(unit)) && !/\bcru[a]?\b/.test(x.key || ''));
+      if (alt) f = alt;
+    }
+    let grams = 100, label = '', guessed = false;
     const meas = Food.measures(f);
     const findM = lbl => meas.find(x => x.label === lbl) || meas.find(x => x.label.startsWith(lbl));
     if (unit === 'g') grams = qty || 100;
     else if (unit === 'kg') grams = (qty || 1) * 1000;
     else if (unit === 'ml') grams = qty || 200;
-    else if (unit) { const mm = findM(unit) || (unit === 'fatia' || unit === 'pedaço' ? meas.find(x => x.label.startsWith(unit)) || meas[0] : null); const g = mm ? mm.g : DEFAULT_G[unit] || 100; grams = g * (qty || 1); label = (qty || 1) + ' ' + unit; }
-    else { const u = (f.kcal >= 600 ? findM('colher de chá') : null) || findM('unidade') || findM('fatia') || findM('colher de sopa') || findM('porção') || findM('copo') || meas.slice().sort((a, b) => Math.abs(a.g - 60) - Math.abs(b.g - 60))[0] || null; if (qty != null && u) { grams = u.g * qty; label = qty + ' ' + (u.label === 'unidade' ? (qty > 1 ? 'unidades' : 'unidade') : u.label); } else if (qty != null && qty > 20) grams = qty; else if (u) { grams = u.g * (qty || 1); label = (qty || 1) + ' ' + u.label; } else { grams = 100 * (qty || 1); label = ''; } }
-    return { ref: f.ref, name: f.name, grams: Math.round(grams), label: niceLabel(label), heard: s, check: !unit && !findM('unidade') };
+    else if (unit === 'litro') { grams = (qty || 1) * 1000; label = niceLabel((qty || 1) + ' ' + ((qty || 1) > 1 ? 'litros' : 'litro')).replace(/^meia litro/, 'meio litro'); }
+    else if (unit) {
+      const mm = findM(unit) || (unit === 'fatia' || unit === 'pedaço' ? meas.find(x => x.label.startsWith(unit)) || meas[0] : null);
+      // medida de volume (copo, xícara) num alimento seco sem essa medida na tabela: flocos e farinhas pesam ~0,4 g por ml
+      const dry = /flocos|farinha|farelo|granola|cereal|\bpo\b|aveia|acucar|arroz, .*cru|feijao, .*cru/.test(f.key || '');
+      const vol = /copo|xícara|caneca/.test(unit);
+      const g = mm ? mm.g : (DEFAULT_G[unit] || 100) * (vol && dry ? 0.4 : 1);
+      grams = g * (qty || 1); label = (qty || 1) + ' ' + unit; if (!mm) guessed = true;
+    }
+    else if (qty != null && qty > 20) grams = qty; // "100 de feijão": ninguém come 100 conchas, são gramas
+    else { const u = (/^alface/.test(f.key || '') ? findM('prato raso') : null) || (f.kcal >= 600 ? findM('colher de chá') : null) || (/requeij|geleia|doce, de leite|maionese|catchup|ketchup|mostarda|creme de leite|leite, condensado/.test(f.key || '') ? findM('colher de sopa') : null) || findM('unidade') || findM('fatia') || findM('bife') || findM('filé') || (/^feijao/.test(f.key || '') ? findM('concha') : null) || findM('porção') || findM('copo') || findM('colher de sopa') || meas.slice().sort((a, b) => Math.abs(a.g - 60) - Math.abs(b.g - 60))[0] || null; if (qty != null && u) { grams = u.g * qty; label = qty + ' ' + (u.label === 'unidade' ? (qty > 1 ? 'unidades' : 'unidade') : u.label); } else if (qty != null && qty > 20) grams = qty; else if (u) { grams = u.g * (qty || 1); label = (qty || 1) + ' ' + u.label; } else { grams = 100 * (qty || 1); label = ''; } }
+    return { ref: f.ref, name: f.name, grams: Math.round(grams), label: niceLabel(label), heard: s, unit, check: guessed || (!unit && !findM('unidade')) || grams > 1500 };
   }
   // "arroz feijao frango" sem separador vira três itens
   function splitBySyn(part) {
@@ -122,7 +145,19 @@
     const parts = [];
     body.split(/\s*(?:,|\s+e\s+|\s+com\s+|\s+mais\s+)\s*/).filter(Boolean).forEach(p => splitBySyn(p).forEach(x => parts.push(x)));
     const items = [], miss = [];
-    parts.forEach(p => { const it = foodItem(p.trim()); if (!it) return; if (it.miss) miss.push(it.miss); else items.push(it); });
+    let prevHead = null, prevUnit = null;
+    parts.forEach(p => {
+      p = p.trim();
+      // "um ovo cozido e dois fritos": o segundo pedaço só tem o preparo, herda o alimento anterior
+      const mm = p.match(/^((?:\d+(?:\.\d+)?\s+)?)(frit[oa]s?|cozid[oa]s?|grelhad[oa]s?|assad[oa]s?|crus?|cruas?|mexid[oa]s?)$/);
+      if (mm && prevHead) p = mm[1] + prevHead + ' ' + mm[2];
+      // "4 colheres de arroz e 2 de feijão": o 2 herda a medida anterior
+      const m2 = p.match(/^(\d+(?:\.\d+)?)\s+de\s+(.+)$/);
+      const UW = { 'copo médio': 'copo', 'xícara de chá': 'xicara', 'xícara de café': 'xicara de cafe', 'colher de arroz (de servir)': 'colher de servir', 'colher de chá': 'colher de cha', 'pedaço': 'pedaco', 'porção': 'porcao', 'filé': 'file', 'litro': 'litros' };
+      if (m2 && prevUnit) p = m2[1] + ' ' + (UW[prevUnit] || prevUnit) + ' de ' + m2[2];
+      const it = foodItem(p); if (!it) return;
+      if (it.miss) miss.push(it.miss); else { items.push(it); prevHead = (it.heard || '').split(' ')[0]; prevUnit = it.unit || null; }
+    });
     if (!items.length && !miss.length) return null;
     return { type: 'food', meal, items, miss, explicit };
   }
@@ -187,10 +222,12 @@
     const pf = /(anos|altura|metro|centimetro)/.test(t) ? profile(t) : null; if (pf) return [pf];
     const out = [];
     let prev = null;
-    splitClauses(t).forEach(c => {
+    const clauses = [];
+    splitClauses(t).forEach(c => { if (/agua/.test(c) && /\s+e\s+/.test(c) && !/agua de coco/.test(c)) c.split(/\s+e\s+/).forEach(x => x.trim() && clauses.push(x.trim())); else clauses.push(c); });
+    clauses.forEach(c => {
       let a = sleep(c) || weight(c) || water(c, cfg) || food(c, hour);
       // "comi arroz, feijão e frango": o que vem depois da vírgula continua sendo comida
-      if (!a && prev && prev.type === 'food') { a = food('comi ' + c, hour); if (a) a.meal = prev.meal; }
+      if (!a && prev && (prev.type === 'food' || prev.type === 'water')) { a = food('comi ' + c, hour); if (a && prev.type === 'food') a.meal = prev.meal; }
       else if (a && a.type === 'food' && !a.explicit && prev && prev.type === 'food') a.meal = prev.meal; // "...e tomei café" continua no café da manhã
       if (a) { out.push(a); prev = a; }
     });
