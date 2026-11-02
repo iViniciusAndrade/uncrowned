@@ -102,7 +102,8 @@
     const tl = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
     tl.on('tileerror', () => { if (++errs === 6) { const n = document.createElement('div'); n.className = 'map-off'; n.textContent = 'Sem internet para carregar o mapa. O percurso continua sendo gravado.'; el.appendChild(n); } });
     tl.on('tileload', () => { errs = 0; const n = el.querySelector('.map-off'); if (n) n.remove(); });
-    const line = L.polyline(pts, { color: '#1fbf5a', weight: 6, opacity: 0.95 }).addTo(map);
+    const acc = window.App && App.accent ? App.accent() : '#1fbf5a';
+    const line = L.polyline(pts, { color: acc, weight: 6, opacity: 0.95 }).addTo(map);
     if (pts.length > 1 && !live) { map.fitBounds(line.getBounds(), { padding: [24, 24] }); L.circleMarker(pts[0], { radius: 6, color: '#fff', fillColor: '#000', fillOpacity: 1, weight: 3 }).addTo(map); L.circleMarker(pts[pts.length - 1], { radius: 7, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 3 }).addTo(map); }
     setTimeout(() => { try { if (map._loaded && map.getContainer().isConnected) map.invalidateSize(); } catch (e) {} }, 120);
     return { map, line };
@@ -112,7 +113,7 @@
     const pts = R.pts.map(p => [p.lat, p.lon]);
     const m = mountMap(el, pts, true); if (!m) return;
     R.map = m.map; R.line = m.line;
-    R.dot = L.circleMarker(pts.length ? pts[pts.length - 1] : [-23.6, -46.78], { radius: 8, color: '#fff', fillColor: '#1fbf5a', fillOpacity: 1, weight: 3 }).addTo(R.map);
+    R.dot = L.circleMarker(pts.length ? pts[pts.length - 1] : [-23.6, -46.78], { radius: 8, color: '#fff', fillColor: (window.App && App.accent ? App.accent() : '#1fbf5a'), fillOpacity: 1, weight: 3 }).addTo(R.map);
   }
   function draw() {
     if (!R.map || !R.pts.length) return;

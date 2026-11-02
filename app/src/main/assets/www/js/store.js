@@ -21,6 +21,7 @@
         weigh: { on: false, time: '07:00' }
       },
       ebike: false,
+      theme: 'padrao', // cor de destaque (Perfil > Aparência); o fundo é sempre preto
       swear: true // lembretes de água sem filtro (palavrão); desliga em Perfil > Lembretes
     },
     days: {},

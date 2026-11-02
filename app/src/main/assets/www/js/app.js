@@ -28,12 +28,17 @@
   };
   function ring(val, max, size, label, sub) {
     const r = (size - 14) / 2, c = 2 * Math.PI * r, pct = max ? Math.min(1, val / max) : 0, over = max && val > max;
-    return `<div class="ring" style="width:${size}px;height:${size}px"><svg viewBox="0 0 ${size} ${size}" style="width:${size}px;height:${size}px"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="#1d1d1d" stroke-width="10" fill="none"/><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="${over ? '#ff5a4e' : '#4ef08a'}" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${c * pct} ${c}" ${pct ? '' : 'opacity="0"'}/></svg><div class="c"><b class="num" style="font-size:${size > 120 ? 1.7 : 1.1}rem;letter-spacing:-.02em">${label}</b><span class="tiny mute">${sub || ''}</span></div></div>`;
+    return `<div class="ring" style="width:${size}px;height:${size}px"><svg viewBox="0 0 ${size} ${size}" style="width:${size}px;height:${size}px"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="#1d1d1d" stroke-width="10" fill="none"/><circle cx="${size / 2}" cy="${size / 2}" r="${r}" style="stroke:${over ? 'var(--bad)' : 'var(--green)'}" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${c * pct} ${c}" ${pct ? '' : 'opacity="0"'}/></svg><div class="c"><b class="num" style="font-size:${size > 120 ? 1.7 : 1.1}rem;letter-spacing:-.02em">${label}</b><span class="tiny mute">${sub || ''}</span></div></div>`;
   }
   function bar(v, max) { const p = max ? Math.min(100, v / max * 100) : 0; return `<div class="bar${max && v > max * 1.05 ? ' over' : ''}"><i style="width:${p}%"></i></div>`; }
   const dateLabel = k => { const d = new Date(k + 'T12:00:00'); const t = Store.dkey(); const y = new Date(); y.setDate(y.getDate() - 1); if (k === t) return 'Hoje'; if (k === Store.dkey(y)) return 'Ontem'; return WEEKD[d.getDay()] + ', ' + d.getDate() + '/' + String(d.getMonth() + 1).padStart(2, '0'); };
   const shift = (k, n) => { const d = new Date(k + 'T12:00:00'); d.setDate(d.getDate() + n); return Store.dkey(d); };
   const greet = () => { const h = new Date().getHours(); return h < 5 ? 'Boa madrugada' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; };
+
+  // ---------- tema de cor (fundo sempre preto; padrão = branco e cinza) ----------
+  const THEMES = [['padrao', 'Padrão', '#f4f4f4'], ['lilas', 'Lilás', '#c4a3ff'], ['rosa', 'Rosa', '#ff8fc8'], ['verde', 'Verde', '#4ef08a'], ['azul', 'Azul', '#7cc6ff'], ['vermelho', 'Vermelho', '#ff5f5f'], ['dourado', 'Dourado', '#f2c45a']];
+  App.applyTheme = () => { const t = (S().settings && S().settings.theme) || 'padrao'; if (t === 'padrao') delete document.body.dataset.theme; else document.body.dataset.theme = t; };
+  App.accent = () => getComputedStyle(document.body).getPropertyValue('--green').trim() || '#4ef08a';
 
   // ---------- navegação ----------
   App.hist = [];
@@ -302,7 +307,7 @@
       const W = 320, H = 140, pad = 24, min = Math.min(...w.map(x => x.kg)) - 1, max = Math.max(...w.map(x => x.kg)) + 1;
       const X = i => pad + i * (W - 2 * pad) / (w.length - 1), Y = v => H - pad - (v - min) / (max - min) * (H - 2 * pad);
       const path = w.map((x, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(x.kg).toFixed(1)).join(' ');
-      chart = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Peso nos últimos registros"><line x1="${pad}" x2="${W - pad}" y1="${Y(max - 1)}" y2="${Y(max - 1)}" stroke="#232323"/><line x1="${pad}" x2="${W - pad}" y1="${Y(min + 1)}" y2="${Y(min + 1)}" stroke="#232323"/><path d="${path} L${X(w.length - 1)} ${H - pad} L${X(0)} ${H - pad}Z" fill="rgba(255,255,255,.06)"/><path d="${path}" stroke="#4ef08a" stroke-width="2.2" fill="none"/><circle cx="${X(w.length - 1)}" cy="${Y(w[w.length - 1].kg)}" r="4.5" fill="#f4f4f4"/><text x="${pad}" y="${Y(max - 1) - 6}" fill="#7c7c7c" font-size="10">${fmt(max - 1, 1)} kg</text><text x="${pad}" y="${Y(min + 1) + 14}" fill="#7c7c7c" font-size="10">${fmt(min + 1, 1)} kg</text><text x="${W - pad}" y="${Y(w[w.length - 1].kg) - 10}" fill="#f4f4f4" font-size="12" text-anchor="end" font-weight="700">${fmt(w[w.length - 1].kg, 1)}</text></svg>`;
+      chart = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Peso nos últimos registros"><line x1="${pad}" x2="${W - pad}" y1="${Y(max - 1)}" y2="${Y(max - 1)}" stroke="#232323"/><line x1="${pad}" x2="${W - pad}" y1="${Y(min + 1)}" y2="${Y(min + 1)}" stroke="#232323"/><path d="${path} L${X(w.length - 1)} ${H - pad} L${X(0)} ${H - pad}Z" fill="rgba(255,255,255,.06)"/> <path d="${path}" style="stroke:var(--green)" stroke-width="2.2" fill="none"/><circle cx="${X(w.length - 1)}" cy="${Y(w[w.length - 1].kg)}" r="4.5" fill="#f4f4f4"/><text x="${pad}" y="${Y(max - 1) - 6}" fill="#7c7c7c" font-size="10">${fmt(max - 1, 1)} kg</text><text x="${pad}" y="${Y(min + 1) + 14}" fill="#7c7c7c" font-size="10">${fmt(min + 1, 1)} kg</text><text x="${W - pad}" y="${Y(w[w.length - 1].kg) - 10}" fill="#f4f4f4" font-size="12" text-anchor="end" font-weight="700">${fmt(w[w.length - 1].kg, 1)}</text></svg>`;
     }
     const T = [['flex', 'Flexões (máximo)', 'rep'], ['agach', 'Agachamentos em 1 min', 'rep'], ['prancha', 'Prancha', 's']];
     const wk = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); wk.push(Store.dkey(d)); }
@@ -575,6 +580,8 @@
       <div class="li"><div class="grow"><div class="t">Sem limite de bateria</div><div class="s">${pst(perm.battery)}. No Poco/HyperOS, ative também o “Início automático” do app.</div></div><button class="btn sm" type="button" data-act="perm" data-arg="battery">Abrir</button></div>
       <div class="li"><div class="grow"><div class="t">Microfone</div><div class="s">${pst(perm.mic)}</div></div><button class="btn sm" type="button" data-act="perm" data-arg="mic">Liberar</button></div>
       <div class="li"><div class="grow"><div class="t">Localização (bike)</div><div class="s">${pst(perm.location)}</div></div><button class="btn sm" type="button" data-act="perm" data-arg="location">Liberar</button></div></div>
+    <div class="card"><span class="lbl">Aparência</span><p class="tiny mute">Cor de destaque do app. O fundo continua preto.</p>
+      <div class="swatches">${THEMES.map(([k, l, c]) => `<button type="button" class="swatch ${(s.settings.theme || 'padrao') === k ? 'on' : ''}" data-act="theme" data-arg="${k}" aria-label="Tema ${l}"><i style="background:${c}"></i>${l}</button>`).join('')}</div></div>
     <div class="card"><span class="lbl">Voz</span>
       <div class="li"><div class="grow"><div class="t">Treinador fala durante o treino</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="voice" ${s.settings.voice ? 'checked' : ''} aria-label="Treinador fala"></div>
       <div class="li"><div class="grow"><div class="t">Mãos livres no treino</div><div class="s">Fica ouvindo “pausa”, “próximo”, “feito”, “volta”</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="handsFree" ${s.settings.handsFree ? 'checked' : ''} aria-label="Mãos livres"></div>
@@ -766,6 +773,7 @@
       case 'my-foods': myFoods(); break;
       case 'mic-ask': voiceOpen(arg); break;
       case 'bike-mode': App.bikeMode = arg; s.settings.ebike = arg === 'ebike'; Store.save(); App.render(); break;
+      case 'theme': s.settings.theme = arg; Store.save(); App.applyTheme(); App.render(); break;
       case 'ebike-assist': s.settings.ebikeAssist = arg; Store.save(); App.render(); break;
       case 'bike-start': Bike.start(arg); break;
       case 'bike-pause': Bike.pause(); break;
@@ -790,9 +798,9 @@
       case 'set-bool': s.settings[arg] = t.checked; Store.save(); break;
       case 'backup': { const raw = JSON.stringify(s); if (!UCBridge.share('uncrowned-backup-' + Store.dkey() + '.json', raw)) App.toast('Backup copiado'); break; }
       case 'restore': App.sheet(`<h2>Importar backup</h2><p class="small mute">Cole aqui o conteúdo do backup. Isso substitui tudo o que está no app.</p><textarea class="input" id="rs"></textarea><button class="btn pri block" type="button" data-act="restore-ok">Importar</button>`); break;
-      case 'restore-ok': try { const o = JSON.parse($('#rs').value); if (!o || typeof o !== 'object' || !('days' in o)) throw 0; Store.replace(o); App.closeSheet(); App.render(); syncReminders(); App.toast('Backup importado'); } catch (er) { App.toast('Esse texto não é um backup válido'); } break;
+      case 'restore-ok': try { const o = JSON.parse($('#rs').value); if (!o || typeof o !== 'object' || !('days' in o)) throw 0; Store.replace(o); App.closeSheet(); App.applyTheme(); App.render(); syncReminders(); App.toast('Backup importado'); } catch (er) { App.toast('Esse texto não é um backup válido'); } break;
       case 'wipe': App.sheet(`<h2>Apagar tudo?</h2><p class="mute">Perfil, comidas, treinos e percursos somem deste celular. Não dá para desfazer.</p><button class="btn danger block" type="button" data-act="wipe-ok">Apagar tudo</button><button class="btn ghost block" type="button" data-close>Cancelar</button>`); break;
-      case 'wipe-ok': Store.reset(); ob = OB0(); App.closeSheet(); App.go('hoje'); break;
+      case 'wipe-ok': Store.reset(); ob = OB0(); App.closeSheet(); App.applyTheme(); App.go('hoje'); break;
     }
   });
   document.addEventListener('input', e => {
@@ -824,5 +832,5 @@
     return false;
   };
 
-  App.render(); applyPending(); if (S().profile) syncReminders();
+  App.applyTheme(); App.render(); applyPending(); if (S().profile) syncReminders();
 })();
