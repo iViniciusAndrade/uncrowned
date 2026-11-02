@@ -1,6 +1,6 @@
 # Contexto para o Claude
 
-App "Uncrowned" (pacote com.uncrownedlabs.uncrowned), marca UncrownedLabs, do Vinicius Andrade. Irmão do app de música Uncrowned Music.
+App "Uncrowned Train" (pacote com.uncrownedlabs.uncrowned), marca UncrownedLabs, do Vinicius Andrade. Irmão do app de música Uncrowned Music.
 
 - Interface em `app/src/main/assets/www` (JS puro, sem build). Nativo em Java simples, sem AndroidX; única dependência: play-services-code-scanner.
 - A ponte JS→Java é `window.UCNative` (Bridge.java). Chamadas com retorno usam `UCBridge` (bridge.js): o Java responde com `UCBridge._resolve(id, json)` e emite eventos com `UCBridge._emit(nome, json)` ('voice', 'loc', 'locerr', 'intent').

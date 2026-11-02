@@ -177,6 +177,40 @@
     sources: [['Acibadem: o que ortodontistas dizem sobre mewing', 'https://acibademinternational.com/blog/mewing-what-orthodontists-say-about-tongue-posture-jawlines-and-the-evidence/'], ['Medical News Today: mordedores tipo Jawzrsize', 'https://www.medicalnewstoday.com/articles/jawzrsize-review'], ['Acibadem: o que exercícios de mandíbula mudam', 'https://acibademinternational.com/blog/jaw-exercises-what-they-can-and-cannot-change-jawline-tmj-and-bruxism/']]
   };
 
+  // ---------- Calistenia Pura (sem nenhum aparelho) ----------
+  const CAL_W = [[3, '8', 75], [3, '10', 75], [4, '10', 60], [4, '12', 60]];
+  const CAL_DAYS = {
+    A: { name: 'Empurrar e pernas', items: [['flex', 1], ['agach', 1.5], ['pike', 1], ['avanco', 1], ['ponte_uni', 1], ['prancha', 'tempo']] },
+    B: { name: 'Costas e core', items: [['superman', 1.2], ['ytw', 1], ['bear_crawl', 'tempo'], ['dead_bug', 1.2], ['prancha_lat', 'tempo'], ['elev_pernas', 1]] },
+    C: { name: 'Pernas e potência', items: [['agach_pausa', 1], ['agach_salto', 0.8], ['patinador', 1.5], ['burpee', 0.8], ['panturrilha', 2], ['escalador', 2]] }
+  };
+  function calSession(day, week) {
+    const [sets, reps, rest] = CAL_W[Math.min(4, Math.max(1, week)) - 1], d = CAL_DAYS[day];
+    return { id: 'cal-' + day, name: 'Calistenia · ' + d.name, short: 'Semana ' + week + ' · ' + sets + ' séries · só o peso do corpo', blocks: [
+      { kind: 'list', label: 'Aquecimento', secs: 30, items: WARM },
+      { kind: 'sets', label: 'Séries', items: d.items.map(([id, m]) => [id, sets, m === 'tempo' ? (20 + week * 5) + ' s' : String(Math.round(+reps * m)), rest]) },
+      { kind: 'list', label: 'Alongamento', secs: 30, items: COOL }] };
+  }
+  // ---------- Halteres em Casa ----------
+  const HAL_DAYS = {
+    A: { name: 'Corpo todo A', items: ['goblet', 'desenvolvimento', 'remada_halter', 'stiff', 'rosca', 'prancha'] },
+    B: { name: 'Corpo todo B', items: ['avanco_halter', 'thruster', 'renegada', 'elevacao_lateral', 'flex', 'dead_bug'] }
+  };
+  function halSession(day, week) {
+    const [sets, reps] = [[3, '12'], [3, '10'], [4, '10'], [4, '8']][Math.min(4, Math.max(1, week)) - 1], d = HAL_DAYS[day];
+    return { id: 'hal-' + day, name: 'Halteres · ' + d.name, short: 'Semana ' + week + ' · ' + sets + ' × ' + reps + ' · aumente o peso quando sobrar 2 repetições', blocks: [
+      { kind: 'list', label: 'Aquecimento', secs: 30, items: WARM },
+      { kind: 'sets', label: 'Séries', items: d.items.map(id => [id, sets, /prancha|dead_bug/.test(id) ? '30 s' : reps, 75]) },
+      { kind: 'list', label: 'Alongamento', secs: 30, items: COOL }] };
+  }
+  const PROGRAMS = [
+    { id: 'p28', name: '28 Dias em Casa', tag: 'sem', freq: '5 dias por semana', len: '4 semanas', desc: 'Circuitos por tempo de 20 a 30 minutos, do iniciante ao pico. O programa mais simples para começar.' },
+    { id: 'calis', name: 'Calistenia Pura', tag: 'sem', freq: '3 dias por semana', len: '4 semanas', desc: 'Só o peso do corpo, sem cadeira, mesa ou barra. Séries e repetições que aumentam toda semana.' },
+    { id: 'aranha', name: 'Protocolo Aranha', tag: 'misto', freq: '5 dias por semana', len: 'Contínuo', desc: 'Inspirado no treino do Tom Holland: Cindy, escada de 1.500 repetições, circuito Ashwell e sessão explosiva. Adapta se você não tiver barra ou halteres.' },
+    { id: 'halteres', name: 'Halteres em Casa', tag: 'com', freq: '3 dias por semana', len: '4 semanas', desc: 'Corpo todo com um par de halteres. Para ganhar força e massa sem academia.' },
+    { id: 'rosto', name: 'Mandíbula e postura', tag: 'sem', freq: 'Dia sim, dia não', len: 'Contínuo', desc: 'Mordedor, postura de língua e pescoço, com as regras para não machucar a articulação.' }
+  ];
+
   // ---------- gerador de treino ----------
   const TEMPL = {
     corpo: ['squat', 'push', 'pull', 'hinge', 'core', 'cardio', 'lunge', 'core'],
@@ -229,5 +263,5 @@
 
   const EQ_LABEL = { cadeira: 'cadeira ou mesa', halteres: 'halteres', barra: 'barra fixa', paralela: 'paralelas', elastico: 'elástico', academia: 'academia' };
 
-  window.EXDB = { X, WARM, COOL, MOB, W28, day28, ARANHA, jawSession, JAW_INFO, generate, resolve, hasEq, EQ_LABEL, TYPE28, PATTERN };
+  window.EXDB = { X, WARM, COOL, MOB, W28, day28, ARANHA, jawSession, JAW_INFO, calSession, halSession, CAL_DAYS, HAL_DAYS, PROGRAMS, generate, resolve, hasEq, EQ_LABEL, TYPE28, PATTERN };
 })();

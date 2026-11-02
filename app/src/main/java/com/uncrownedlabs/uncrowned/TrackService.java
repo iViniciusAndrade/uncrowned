@@ -70,6 +70,7 @@ public class TrackService extends Service implements LocationListener {
             if (l.hasAccuracy()) o.put("acc", l.getAccuracy());
             if (l.hasSpeed()) o.put("speed", l.getSpeed());
             if (l.hasAltitude()) o.put("alt", l.getAltitude());
+            if (l.hasVerticalAccuracy()) o.put("vacc", l.getVerticalAccuracyMeters());
             String s = o.toString();
             synchronized (points) { points.add(s); }
             L cb = listener;

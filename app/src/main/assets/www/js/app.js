@@ -18,7 +18,7 @@
   App.closeSheet = () => { const s = $('#sheet'); s.classList.remove('open'); s.setAttribute('aria-hidden', 'true'); $('#sheet-content').innerHTML = ''; if (App._sheetClose) { const f = App._sheetClose; App._sheetClose = null; f(); } };
   function ring(val, max, size, label, sub) {
     const r = (size - 14) / 2, c = 2 * Math.PI * r, pct = max ? Math.min(1, val / max) : 0, over = max && val > max;
-    return `<div class="ring" style="width:${size}px;height:${size}px"><svg viewBox="0 0 ${size} ${size}" style="width:${size}px;height:${size}px"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="#1d1d1d" stroke-width="10" fill="none"/><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="${over ? '#ff5a4e' : '#f4f4f4'}" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${c * pct} ${c}" ${pct ? '' : 'opacity="0"'}/></svg><div class="c"><b class="num" style="font-size:${size > 120 ? 1.7 : 1.1}rem;letter-spacing:-.02em">${label}</b><span class="tiny mute">${sub || ''}</span></div></div>`;
+    return `<div class="ring" style="width:${size}px;height:${size}px"><svg viewBox="0 0 ${size} ${size}" style="width:${size}px;height:${size}px"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="#1d1d1d" stroke-width="10" fill="none"/><circle cx="${size / 2}" cy="${size / 2}" r="${r}" stroke="${over ? '#ff5a4e' : '#4ef08a'}" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${c * pct} ${c}" ${pct ? '' : 'opacity="0"'}/></svg><div class="c"><b class="num" style="font-size:${size > 120 ? 1.7 : 1.1}rem;letter-spacing:-.02em">${label}</b><span class="tiny mute">${sub || ''}</span></div></div>`;
   }
   function bar(v, max) { const p = max ? Math.min(100, v / max * 100) : 0; return `<div class="bar${max && v > max * 1.05 ? ' over' : ''}"><i style="width:${p}%"></i></div>`; }
   const dateLabel = k => { const d = new Date(k + 'T12:00:00'); const t = Store.dkey(); const y = new Date(); y.setDate(y.getDate() - 1); if (k === t) return 'Hoje'; if (k === Store.dkey(y)) return 'Ontem'; return WEEKD[d.getDay()] + ', ' + d.getDate() + '/' + String(d.getMonth() + 1).padStart(2, '0'); };
@@ -29,7 +29,7 @@
   App.go = (tab, sub) => { App.tab = tab; if (sub) App.sub[tab] = sub; App.render(); $('#view').scrollTop = 0; };
   App.render = () => {
     $$('#tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === App.tab));
-    if (Bike.R.map && App.tab !== 'bike') { try { Bike.R.map.remove(); } catch (e) {} Bike.R.map = null; }
+    if (Bike.R.map && App.tab !== 'bike') { try { Bike.R.map.remove(); } catch (e) {} Bike.R.map = null; Bike.R.dot = null; Bike.R.line = null; }
     const v = $('#view');
     document.body.classList.toggle('onb', !S().profile);
     if (!S().profile) { v.innerHTML = onboarding(); bindOnboarding(); return; }
@@ -67,7 +67,7 @@
   const obSeg = (id, key, opts) => `<div class="seg" id="${id}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(ob.d[key]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   function onboarding() {
     const d = ob.d, st = ob.step;
-    if (st === 0) return `<div class="ob ob-welcome"><div class="ob-hero"><img src="img/logo.png" alt="" width="96" height="113"><span class="lbl">UncrownedLabs</span><h1>Uncrowned</h1><p class="ink2">Treino, comida, água, sono, rosto e bike num lugar só. Leva uns 2 minutos para configurar.</p></div>
+    if (st === 0) return `<div class="ob ob-welcome"><div class="ob-hero"><img src="img/logo.png" alt="" width="96" height="113"><span class="lbl">UncrownedLabs</span><h1>Uncrowned Train</h1><p class="ink2">Treino, comida, água, sono, rosto e bike num lugar só. Leva uns 2 minutos para configurar.</p></div>
       <ul class="ob-list"><li><b>Metas calculadas para você</b><span>Calorias, proteína e água a partir do seu corpo e objetivo</span></li><li><b>Fale em vez de digitar</b><span>“Comi 2 ovos e dormi 7 horas” e está anotado</span></li><li><b>Treinos que se adaptam</b><span>Com ou sem equipamento, no seu nível</span></li></ul>
       <div class="ob-bar"><button class="btn pri block" type="button" id="ob-next">Começar</button></div></div>`;
     const head = `<div class="ob-head"><button class="icon-btn" type="button" id="ob-back" aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><span class="tiny mute num">Passo ${st} de ${OB_STEPS}</span><span style="width:40px"></span></div><div class="steps">${[1, 2, 3, 4].map(i => `<i class="${i <= st ? 'on' : ''}"></i>`).join('')}</div>`;
@@ -156,19 +156,47 @@
     const body = { programas: tProgramas, montar: tMontar, rosto: tRosto, exercicios: tExercicios, progresso: tProgresso }[sub]();
     return `<div class="hero"><h1>Treino</h1></div>${seg}${body}`;
   }
+  const userEq = () => S().calis ? [] : S().eq;
+  App.userEq = userEq;
   function tProgramas() {
+    if (App.progOpen) return progDetail(App.progOpen);
+    const s = S(), f = App.progFilter || 'todos';
+    const list = EXDB.PROGRAMS.filter(p => f === 'todos' || p.tag === f || p.tag === 'misto');
+    const prog = id => id === 'p28' ? Object.keys(s.p28.done).length + '/28 dias' : id === 'calis' ? 'semana ' + s.cal.week : id === 'halteres' ? 'semana ' + s.hal.week : id === 'aranha' ? 'nível ' + s.aranha.level : (Store.streak(x => !!s.jaw.log[x]) + ' dias seguidos');
+    const tagL = { sem: 'Sem aparelhos', com: 'Com aparelhos', misto: 'Com ou sem aparelhos' };
+    return `<div class="seg">${[['todos', 'Todos'], ['sem', 'Sem aparelhos'], ['com', 'Com aparelhos']].map(([k, l]) => `<button type="button" class="${f === k ? 'on' : ''}" data-act="prog-filter" data-arg="${k}">${l}</button>`).join('')}</div>
+      <div class="card tight"><div class="row between"><div class="grow"><div class="t" style="font-weight:700">Calistenia pura</div><div class="tiny mute">Troca qualquer exercício que precise de aparelho, cadeira ou barra por um só com o peso do corpo, em todos os programas.</div></div><input type="checkbox" class="switch" data-act="calis-toggle" ${s.calis ? 'checked' : ''} aria-label="Calistenia pura"></div></div>
+      ${list.map(p => `<div class="card click" data-act="prog-open" data-arg="${p.id}"><div class="row between"><span class="lbl">${tagL[p.tag]}</span><span class="pill num">${esc(prog(p.id))}</span></div><h2>${esc(p.name)}</h2><p class="small ink2">${esc(p.desc)}</p><div class="row between"><span class="tiny mute">${esc(p.freq)} · ${esc(p.len)}</span><span class="pill solid">Ver programa</span></div></div>`).join('')}`;
+  }
+  function progDetail(id) {
+    const s = S();
+    const back = `<button class="btn sm ghost" type="button" data-act="prog-back" style="align-self:flex-start"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>Todos os programas</button>`;
+    if (id === 'rosto') return back + tRosto();
+    if (id === 'calis' || id === 'halteres') {
+      const isC = id === 'calis', st = isC ? s.cal : s.hal, days = isC ? EXDB.CAL_DAYS : EXDB.HAL_DAYS, p = EXDB.PROGRAMS.find(x => x.id === id);
+      const plan = isC ? ['A', 'B', 'C'] : ['A', 'B', 'A'];
+      return back + `<div class="card"><span class="lbl">Programa</span><h2>${esc(p.name)}</h2><p class="small ink2">${esc(p.desc)}</p>
+        <div class="field"><label>Semana</label><div class="seg">${[1, 2, 3, 4].map(w => `<button type="button" class="${st.week === w ? 'on' : ''}" data-act="${isC ? 'cal' : 'hal'}-week" data-arg="${w}">${w}</button>`).join('')}</div></div>
+        <div class="list">${plan.map((d, i) => { const ss = isC ? EXDB.calSession(d, st.week) : EXDB.halSession(d, st.week); return `<div class="li click" data-act="${isC ? 'cal' : 'hal'}" data-arg="${d}"><span class="pill" style="min-width:58px;text-align:center">Treino ${i + 1}</span><div class="grow"><div class="t">${esc(days[d].name)}</div><div class="s">${esc(ss.short)}</div></div></div>`; }).join('')}</div>
+        <p class="tiny mute">Faça os treinos em dias alternados. Passe para a semana seguinte quando completar todas as séries com boa técnica.</p>
+        ${!isC && !s.eq.includes('halteres') && !s.calis ? '<div class="note">Você não marcou halteres no seu perfil. O app troca os exercícios por versões sem peso até você marcar.</div>' : ''}</div>`;
+    }
+    return back + legacyProg(id);
+  }
+  function legacyProg(which) {
     const s = S(), A = EXDB.ARANHA, nx = nextP28();
     const grid = [1, 2, 3, 4].map(w => `<div class="row between"><span class="tiny lbl">Semana ${w} · ${EXDB.W28[w - 1].name}</span></div><div class="days">${[1, 2, 3, 4, 5, 6, 7].map(i => { const d = (w - 1) * 7 + i; const t = EXDB.PATTERN[(d - 1) % 7]; const tt = d === 28 ? 'T' : t; return `<button type="button" class="day ${tt === 'R' ? 'rest' : ''} ${s.p28.done[d] ? 'done' : ''} ${d === nx ? 'next' : ''}" data-act="p28" data-arg="${d}"><span>${d}</span><small>${{ A: 'A', B: 'B', C: 'C', R: 'LEVE', T: 'TESTE' }[tt]}</small></button>`; }).join('')}</div>`).join('');
     const done28 = Object.keys(s.p28.done).length;
-    return `<div class="card prog-card"><span class="pill tag num">${done28}/28</span><span class="lbl">Programa</span><h2>28 Dias em Casa</h2><p class="small ink2">Só peso do corpo, 20 a 30 minutos, com progressão semana a semana. A pernas e peito, B core e cardio, C costas e postura.</p>${bar(done28, 28)}${grid}</div>
-    <div class="card"><span class="lbl">Programa</span><h2>${A.name}</h2><p class="small ink2">${esc(A.sub)}</p>
+    const c28 = `<div class="card prog-card"><span class="pill tag num">${done28}/28</span><span class="lbl">Programa</span><h2>28 Dias em Casa</h2><p class="small ink2">Só peso do corpo, 20 a 30 minutos, com progressão semana a semana. A pernas e peito, B core e cardio, C costas e postura.</p>${bar(done28, 28)}${grid}</div>`;
+    const car = `<div class="card"><span class="lbl">Programa</span><h2>${A.name}</h2><p class="small ink2">${esc(A.sub)}</p>
       <div class="field"><label>Nível</label><div class="seg">${[1, 2, 3].map(l => `<button type="button" class="${s.aranha.level === l ? 'on' : ''}" data-act="ar-level" data-arg="${l}">${['', 'Iniciante', 'Intermediário', 'Completo'][l]}</button>`).join('')}</div></div>
       <div class="list">${A.week.map(([wd, k]) => { const ss = A.sessions[k](s.aranha.level); return `<div class="li ${ss ? 'click' : ''}" ${ss ? `data-act="aranha" data-arg="${k}"` : ''}><span class="pill" style="min-width:48px;text-align:center">${wd}</span><div class="grow"><div class="t">${ss ? esc(ss.name) : 'Descanso'}</div><div class="s">${ss ? esc(ss.short) : 'Recuperação total'}</div></div></div>`; }).join('')}</div>
       <details><summary class="small">O que se sabe do treino dele</summary><div class="stack small ink2" style="margin-top:8px">${A.about.map(p => `<p>${esc(p)}</p>`).join('')}<p class="lbl" style="margin-top:6px">Fontes</p>${A.sources.map(([t, u]) => `<a class="small" href="#" data-act="url" data-arg="${esc(u)}">${esc(t)}</a>`).join('')}</div></details></div>`;
+    return which === 'p28' ? c28 : car;
   }
   let gen = null;
   function tMontar() {
-    const s = S(); const o = App.genOpts = App.genOpts || { minutes: 20, focus: 'corpo', eq: s.eq.slice(), level: s.level, noImpact: false, lim: s.lim.slice(), format: 'circuito' };
+    const s = S(); const o = App.genOpts = App.genOpts || { minutes: 20, focus: 'corpo', eq: userEq().slice(), level: s.level, noImpact: false, lim: s.lim.slice(), format: 'circuito' };
     const chip = (key, v, l, multi) => { const on = multi ? (o[key] || []).includes(v) : o[key] == v; return `<button type="button" class="chip ${on ? 'on' : ''}" data-act="gen-opt" data-key="${key}" data-arg="${v}" data-multi="${multi ? 1 : ''}">${l}</button>`; };
     return `<div class="card"><button class="btn block" type="button" data-act="mic-ask" data-arg="Diga o treino que você quer. Ex.: 30 minutos com halteres para braço, nível pesado"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Falar o treino que eu quero</button>
       <div class="field"><label>Tempo</label><div class="chips">${[10, 15, 20, 30, 45, 60].map(m => chip('minutes', m, m + ' min')).join('')}</div></div>
@@ -189,7 +217,7 @@
       else if (b.kind === 'sets') { head = b.label; items = b.items.map(([id, s, r]) => [id, s + ' × ' + r]); }
       else if (b.kind === 'amrap') { head = b.label + ' · ' + b.mins + ' min'; items = b.items; }
       else if (b.kind === 'ladder') { head = b.label + ' · 1 até ' + b.top + ' e volta'; items = b.items.map(([id, m]) => [id, m + '× o degrau']); }
-      return `<div class="block"><div class="row between" style="border-bottom:1px solid var(--line);padding-bottom:4px"><b class="small">${esc(head)}</b></div>${items.map(([id, r]) => { const ex = EXDB.resolve(id, S().eq, { lim: S().lim }) || EXDB.X[id]; return `<div class="exrow" data-act="ex" data-arg="${ex.id}"><div class="thumb" data-thumb="${ex.anim}"></div><div><div class="t" style="font-weight:650">${esc(ex.n)}</div><div class="tiny mute">${esc(ex.g)}${ex.id !== id ? ' · no lugar de ' + esc(EXDB.X[id].n) : ''}</div></div><span class="small num mute">${esc(r)}</span></div>`; }).join('')}</div>`;
+      return `<div class="block"><div class="row between" style="border-bottom:1px solid var(--line);padding-bottom:4px"><b class="small">${esc(head)}</b></div>${items.map(([id, r]) => { const ex = EXDB.resolve(id, userEq(), { lim: S().lim }) || EXDB.X[id]; return `<div class="exrow" data-act="ex" data-arg="${ex.id}"><div class="thumb" data-thumb="${ex.anim}"></div><div><div class="t" style="font-weight:650">${esc(ex.n)}</div><div class="tiny mute">${esc(ex.g)}${ex.id !== id ? ' · no lugar de ' + esc(EXDB.X[id].n) : ''}</div></div><span class="small num mute">${esc(r)}</span></div>`; }).join('')}</div>`;
     }).join('');
     return `<div class="card"><span class="lbl">${kind === 'gen' ? 'Seu treino' : 'Sessão'}</span><h2>${esc(sess.name)}</h2>${sess.short ? `<p class="small mute">${esc(sess.short)}</p>` : ''}${sess.note ? `<div class="note">${esc(sess.note)}</div>` : ''}${rows}
       <div class="grid2">${kind === 'gen' ? '<button class="btn" type="button" data-act="gen">Gerar outro</button>' : '<span></span>'}<button class="btn pri" type="button" data-act="start" data-kind="${kind}" data-arg="${esc(arg || '')}">Começar</button></div></div>`;
@@ -248,7 +276,7 @@
       const W = 320, H = 140, pad = 24, min = Math.min(...w.map(x => x.kg)) - 1, max = Math.max(...w.map(x => x.kg)) + 1;
       const X = i => pad + i * (W - 2 * pad) / (w.length - 1), Y = v => H - pad - (v - min) / (max - min) * (H - 2 * pad);
       const path = w.map((x, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(x.kg).toFixed(1)).join(' ');
-      chart = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Peso nos últimos registros"><line x1="${pad}" x2="${W - pad}" y1="${Y(max - 1)}" y2="${Y(max - 1)}" stroke="#232323"/><line x1="${pad}" x2="${W - pad}" y1="${Y(min + 1)}" y2="${Y(min + 1)}" stroke="#232323"/><path d="${path} L${X(w.length - 1)} ${H - pad} L${X(0)} ${H - pad}Z" fill="rgba(255,255,255,.06)"/><path d="${path}" stroke="#f4f4f4" stroke-width="2.2" fill="none"/><circle cx="${X(w.length - 1)}" cy="${Y(w[w.length - 1].kg)}" r="4.5" fill="#f4f4f4"/><text x="${pad}" y="${Y(max - 1) - 6}" fill="#7c7c7c" font-size="10">${fmt(max - 1, 1)} kg</text><text x="${pad}" y="${Y(min + 1) + 14}" fill="#7c7c7c" font-size="10">${fmt(min + 1, 1)} kg</text><text x="${W - pad}" y="${Y(w[w.length - 1].kg) - 10}" fill="#f4f4f4" font-size="12" text-anchor="end" font-weight="700">${fmt(w[w.length - 1].kg, 1)}</text></svg>`;
+      chart = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Peso nos últimos registros"><line x1="${pad}" x2="${W - pad}" y1="${Y(max - 1)}" y2="${Y(max - 1)}" stroke="#232323"/><line x1="${pad}" x2="${W - pad}" y1="${Y(min + 1)}" y2="${Y(min + 1)}" stroke="#232323"/><path d="${path} L${X(w.length - 1)} ${H - pad} L${X(0)} ${H - pad}Z" fill="rgba(255,255,255,.06)"/><path d="${path}" stroke="#4ef08a" stroke-width="2.2" fill="none"/><circle cx="${X(w.length - 1)}" cy="${Y(w[w.length - 1].kg)}" r="4.5" fill="#f4f4f4"/><text x="${pad}" y="${Y(max - 1) - 6}" fill="#7c7c7c" font-size="10">${fmt(max - 1, 1)} kg</text><text x="${pad}" y="${Y(min + 1) + 14}" fill="#7c7c7c" font-size="10">${fmt(min + 1, 1)} kg</text><text x="${W - pad}" y="${Y(w[w.length - 1].kg) - 10}" fill="#f4f4f4" font-size="12" text-anchor="end" font-weight="700">${fmt(w[w.length - 1].kg, 1)}</text></svg>`;
     }
     const T = [['flex', 'Flexões (máximo)', 'rep'], ['agach', 'Agachamentos em 1 min', 'rep'], ['prancha', 'Prancha', 's']];
     const wk = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); wk.push(Store.dkey(d)); }
@@ -285,7 +313,7 @@
       <div class="grid3"><button class="btn sm" type="button" data-act="food-add" data-arg="">Buscar</button><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="mic-ask" data-arg="Diga o que comeu. Ex.: no almoço comi arroz, feijão e um bife">Falar</button></div></div>
     ${sections}
     <div class="row wrap"><button class="btn sm ghost" type="button" data-act="custom-new">Criar alimento</button><button class="btn sm ghost" type="button" data-act="my-foods">Meus alimentos e favoritos</button></div>
-    <p class="tiny mute">Valores de alimentos naturais: TACO 4ª ed. (NEPA/UNICAMP). Medidas caseiras: IBGE, POF 2008-2009. Produtos de marca: Open Food Facts e o rótulo informado por você.</p>`;
+    <p class="tiny mute">Valores de alimentos naturais: TACO 4ª ed. (NEPA/UNICAMP). Pratos genéricos sem marca: IBGE, POF 2008-2009. Medidas caseiras: IBGE, POF 2008-2009. Produtos de marca: Open Food Facts e o rótulo informado por você.</p>`;
   }
   let fs = { meal: '', q: '', remote: [], loading: false, timer: null, seq: 0 };
   function foodSearch(meal, q) {
@@ -305,7 +333,7 @@
     catch (e) { if (my === fs.seq) fs.remote = []; }
     if (my === fs.seq) { fs.loading = false; renderFS(); }
   }
-  function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · TACO' : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
+  function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · TACO' : f.src === 'IBGE' ? 'Genérico · IBGE' : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
   function renderFS() {
     const el = $('#fs-res'); if (!el) return;
     const s = S();
@@ -315,8 +343,8 @@
       return;
     }
     const local = Food.search(fs.q, 30);
-    const nat = local.filter(f => f.src === 'TACO'), mine = local.filter(f => f.src !== 'TACO');
-    el.innerHTML = (nat.length ? `<span class="lbl">Naturais</span><div class="list">${nat.slice(0, 12).map(foodRow).join('')}</div>` : '') +
+    const nat = local.filter(f => f.src === 'TACO' || f.src === 'IBGE'), mine = local.filter(f => f.src !== 'TACO' && f.src !== 'IBGE');
+    el.innerHTML = (nat.length ? `<span class="lbl">Naturais e genéricos (sem marca)</span><div class="list">${nat.slice(0, 14).map(foodRow).join('')}</div>` : '') +
       `<span class="lbl">Marcas</span><div class="list">${mine.map(foodRow).join('')}${fs.remote.map(f => { App._remote = App._remote || {}; App._remote[f.ref] = f; return foodRow(f); }).join('')}</div>` +
       (fs.loading ? '<p class="empty">Buscando marcas na internet…</p>' : (!mine.length && !fs.remote.length ? `<p class="empty">Nenhuma marca encontrada${UCBridge.native ? '' : ' (sem internet?)'}.</p>` : '')) +
       (!nat.length && !mine.length && !fs.remote.length && !fs.loading ? `<button class="btn block" type="button" data-act="custom-new" data-arg="${esc(fs.q)}">Criar “${esc(fs.q)}” manualmente</button>` : '');
@@ -330,7 +358,7 @@
     let grams = existing ? existing.grams : (meas.find(m => m.label === 'unidade') || meas[0] || { g: 100 }).g;
     let label = existing ? existing.label : '';
     const fav = S().fav.includes(f.ref);
-    App.sheet(`<span class="lbl">${esc(f.src === 'TACO' ? 'Natural · TACO' : f.src)}${f.brand ? ' · ' + esc(f.brand) : ''}</span><h2>${esc(f.name)}</h2>
+    App.sheet(`<span class="lbl">${esc(f.src === 'TACO' ? 'Natural · TACO' : f.src === 'IBGE' ? 'Genérico sem marca · IBGE POF 2008-2009' : f.src)}${f.brand ? ' · ' + esc(f.brand) : ''}</span><h2>${esc(f.name)}</h2>
       <div class="chips">${meas.map((m, i) => `<button type="button" class="chip" data-m="${i}">${esc(m.label)} · ${fmt(m.g)} g</button>`).join('')}<button type="button" class="chip" data-g="100">100 g</button></div>
       <div class="grid2"><div class="field"><label for="pt-q">Quantidade</label><input class="input" id="pt-q" inputmode="decimal" value="1"></div><div class="field"><label for="pt-g">Gramas</label><input class="input" id="pt-g" inputmode="decimal" value="${fmt(grams, 1).replace('.', '')}"></div></div>
       <div class="card tight"><div class="row between"><span class="big" id="pt-kcal">0</span><span class="mute">kcal</span></div><div class="macros small" id="pt-mac"></div></div>
@@ -399,7 +427,7 @@
     const mode = R.on ? R.mode : (App.bikeMode || (s.settings.ebike ? 'ebike' : 'bike'));
     return `<div class="hero"><h1>Ar livre</h1></div>
     ${R.on ? '' : `<div class="chips">${Object.entries(Bike.MODES).map(([k, l]) => `<button type="button" class="chip ${mode === k ? 'on' : ''}" data-act="bike-mode" data-arg="${k}">${l}</button>`).join('')}</div>`}
-    <div class="card"><div class="row between"><span class="lbl">${R.on ? (R.paused ? 'Pausado' : 'Gravando · ' + Bike.MODES[R.mode]) : 'Velocidade atual'}</span>${R.on && !R.paused ? '<span class="pill solid">GPS</span>' : ''}</div>
+    <div class="card"><div class="row between"><span class="lbl">${R.on ? (R.paused ? 'Pausado' : 'Gravando · ' + Bike.MODES[R.mode]) : 'Velocidade atual'}</span>${R.on ? '<span class="pill" id="bk-gps">Procurando GPS…</span>' : ''}</div>
       <div class="speed-wrap"><span class="huge" id="bk-speed">0</span><span class="mute" style="padding-bottom:10px">km/h</span></div>
       <div class="grid3"><div><span class="lbl">Distância</span><div class="num" style="font-size:1.3rem;font-weight:800"><span id="bk-dist">0,00</span> <span class="tiny mute">km</span></div></div><div><span class="lbl">Tempo</span><div class="num" style="font-size:1.3rem;font-weight:800" id="bk-time">0:00</div></div><div><span class="lbl">Média</span><div class="num" style="font-size:1.3rem;font-weight:800"><span id="bk-avg">0,0</span> <span class="tiny mute">km/h</span></div></div><div><span class="lbl">Máxima</span><div class="num" style="font-size:1.3rem;font-weight:800"><span id="bk-max">0,0</span></div></div><div><span class="lbl">Subida</span><div class="num" style="font-size:1.3rem;font-weight:800"><span id="bk-gain">0</span> <span class="tiny mute">m</span></div></div><div><span class="lbl">Gasto</span><div class="num" style="font-size:1.3rem;font-weight:800"><span id="bk-kcal">0</span> <span class="tiny mute">kcal</span></div></div></div>
       <div class="map" id="bk-map"></div>
@@ -453,9 +481,15 @@
     <div class="card"><span class="lbl">Voz</span>
       <div class="li"><div class="grow"><div class="t">Treinador fala durante o treino</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="voice" ${s.settings.voice ? 'checked' : ''} aria-label="Treinador fala"></div>
       <div class="li"><div class="grow"><div class="t">Mãos livres no treino</div><div class="s">Fica ouvindo “pausa”, “próximo”, “feito”, “volta”</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="handsFree" ${s.settings.handsFree ? 'checked' : ''} aria-label="Mãos livres"></div>
+      <div class="field"><label>Voz da treinadora</label><div class="list" id="voice-list">${voiceList()}</div><div class="grid2"><div class="field"><label for="v-rate">Velocidade</label><input type="range" id="v-rate" min="0.7" max="1.3" step="0.02" value="${s.settings.vRate || 0.98}"></div><div class="field"><label for="v-pitch">Tom</label><input type="range" id="v-pitch" min="0.8" max="1.4" step="0.02" value="${s.settings.vPitch || 1.06}"></div></div><div class="grid2"><button class="btn sm" type="button" data-act="voice-test">Ouvir</button><button class="btn sm ghost" type="button" data-act="voice-more">Baixar mais vozes</button></div><p class="tiny mute">As vozes vêm do motor de voz do Google no celular. Se aparecerem poucas, toque em “Baixar mais vozes” e instale o pacote de português (Brasil).</p></div>
       <div class="grid2"><div class="field"><label for="cup">Meu copo (ml)</label><input class="input" id="cup" inputmode="numeric" data-set="cupMl" value="${s.settings.cupMl}"></div><div class="field"><label for="bot">Minha garrafa (ml)</label><input class="input" id="bot" inputmode="numeric" data-set="bottleMl" value="${s.settings.bottleMl}"></div></div></div>
     <div class="card"><span class="lbl">Dados</span><p class="tiny mute">Tudo fica salvo só neste celular. Faça um backup de vez em quando.</p><div class="grid2"><button class="btn" type="button" data-act="backup">Exportar backup</button><button class="btn" type="button" data-act="restore">Importar backup</button></div><button class="btn danger block" type="button" data-act="wipe">Apagar tudo</button></div>
-    <div class="card"><span class="lbl">Sobre</span><p class="small"><b>Uncrowned</b> · UncrownedLabs<br><span class="mute">por Vinicius Andrade · versão ${esc(UCBridge.appVersion())}</span></p><p class="tiny mute">Alimentos: TACO 4ª ed., NEPA/UNICAMP, 2011. Medidas caseiras: IBGE, POF 2008-2009 (mapeamento do projeto taco-br-mcp). Produtos de marca: Open Food Facts (ODbL). Gasto calórico: Compêndio de Atividades Físicas. Mapas: OpenStreetMap. Este app não substitui orientação de médico, nutricionista ou educador físico.</p></div>`;
+    <div class="card"><span class="lbl">Sobre</span><p class="small"><b>Uncrowned Train</b> · UncrownedLabs<br><span class="mute">por Vinicius Andrade · versão ${esc(UCBridge.appVersion())}</span></p><p class="tiny mute">Alimentos: TACO 4ª ed., NEPA/UNICAMP, 2011. Medidas caseiras: IBGE, POF 2008-2009 (mapeamento do projeto taco-br-mcp). Produtos de marca: Open Food Facts (ODbL). Gasto calórico: Compêndio de Atividades Físicas. Mapas: OpenStreetMap. Este app não substitui orientação de médico, nutricionista ou educador físico.</p></div>`;
+  }
+  function voiceList() {
+    const vs = UCBridge.voices(), cur = S().settings.voiceName;
+    if (!vs.length) return '<p class="empty">Nenhuma voz em português encontrada.</p>';
+    return vs.map((v, i) => { const on = cur ? cur === v.name : v.current; const label = 'Voz ' + (i + 1) + (/female|afs|pte|ptf/i.test(v.name) ? ' · feminina' : /male|ptd|ptc/i.test(v.name) ? ' · masculina' : '') + (v.net ? ' · precisa de internet' : ''); return `<div class="li click" data-act="voice-pick" data-arg="${esc(v.name)}"><div class="grow"><div class="t">${label}</div><div class="s">${esc(v.name)}</div></div>${on ? '<span class="pill solid">Em uso</span>' : ''}</div>`; }).join('');
   }
   function recalc() { const s = S(); if (!s.goalsManual) s.goals = Store.calcGoals(s.profile); Store.save(); }
 
@@ -562,8 +596,19 @@
     const act = t.dataset.act, arg = t.dataset.arg, s = S();
     switch (act) {
       case 'go': App.go(arg, t.dataset.sub); break;
+      case 'prog-filter': App.progFilter = arg; App.render(); break;
+      case 'prog-open': App.progOpen = arg; App.render(); $('#view').scrollTop = 0; break;
+      case 'prog-back': App.progOpen = null; App.render(); break;
+      case 'calis-toggle': s.calis = t.checked; Store.save(); App.toast(t.checked ? 'Calistenia pura ligada: só peso do corpo' : 'Usando seus equipamentos'); break;
+      case 'cal': { const ss = EXDB.calSession(arg, s.cal.week); App.sheet(sessionCard(ss, 'cal', arg)); thumbs(); break; }
+      case 'hal': { const ss = EXDB.halSession(arg, s.hal.week); App.sheet(sessionCard(ss, 'hal', arg)); thumbs(); break; }
+      case 'cal-week': s.cal.week = +arg; Store.save(); App.render(); break;
+      case 'hal-week': s.hal.week = +arg; Store.save(); App.render(); break;
+      case 'voice-pick': s.settings.voiceName = arg; Store.save(); UCBridge.setVoice(arg, +(s.settings.vRate || 0.98), +(s.settings.vPitch || 1.06)); setTimeout(() => UCBridge.speak('Oi, eu sou a sua treinadora. Bora treinar?'), 300); App.render(); break;
+      case 'voice-test': UCBridge.setVoice(s.settings.voiceName || '', +(s.settings.vRate || 0.98), +(s.settings.vPitch || 1.06)); setTimeout(() => UCBridge.speak('Agachamento. Dez repetições. Comigo: um, dois, três. Isso, continua assim.'), 250); break;
+      case 'voice-more': if (!UCBridge.openTtsSettings()) App.toast('Só no app Android'); break;
       case 'welcome-ok': App.welcome = false; App.render(); break;
-      case 'sub': App.sub.treino = arg; App.render(); break;
+      case 'sub': App.sub.treino = arg; if (arg === 'programas') App.progOpen = null; App.render(); break;
       case 'water': Store.addWater(+arg); UCBridge.vibrate(30); App.render(); App.toast('+' + arg + ' ml'); break;
       case 'water-undo': { const d = Store.day(); const l = d.waterLog.pop(); if (l) { d.water = Math.max(0, d.water - l[1]); Store.save(); App.render(); } break; }
       case 'water-custom': App.sheet(`<h2>Quanto de água?</h2><div class="chips">${[100, 150, 200, 300, 400, 600, 750, 1000].map(m => `<button type="button" class="chip" data-act="water-pick" data-arg="${m}">${m} ml</button>`).join('')}</div><input class="input" id="wc" inputmode="numeric" placeholder="ml"><button class="btn pri block" type="button" data-act="water-pick" data-arg="input">Adicionar</button>`); break;
@@ -579,7 +624,7 @@
       case 'ar-level': s.aranha.level = +arg; Store.save(); App.render(); break;
       case 'start': {
         const kind = t.dataset.kind; let sess, meta = {};
-        if (kind === 'gen') sess = gen; else if (kind === 'p28') { sess = EXDB.day28(+arg); meta.p28 = +arg; } else if (kind === 'aranha') { sess = EXDB.ARANHA.sessions[arg](s.aranha.level); meta.aranha = arg; } else if (kind === 'jaw') { sess = EXDB.jawSession(s.jaw.week); meta.jaw = true; }
+        if (kind === 'gen') sess = gen; else if (kind === 'p28') { sess = EXDB.day28(+arg); meta.p28 = +arg; } else if (kind === 'aranha') { sess = EXDB.ARANHA.sessions[arg](s.aranha.level); meta.aranha = arg; } else if (kind === 'jaw') { sess = EXDB.jawSession(s.jaw.week); meta.jaw = true; } else if (kind === 'cal') { sess = EXDB.calSession(arg, s.cal.week); meta.cal = arg; } else if (kind === 'hal') { sess = EXDB.halSession(arg, s.hal.week); meta.hal = arg; }
         App.closeSheet(); Player.open(sess, meta); break;
       }
       case 'gen-opt': { const o = App.genOpts, k = t.dataset.key; if (k === 'noImpact') o.noImpact = !o.noImpact; else if (t.dataset.multi) { o[k] = o[k] || []; o[k] = o[k].includes(arg) ? o[k].filter(x => x !== arg) : o[k].concat(arg); } else o[k] = isNaN(+arg) ? arg : +arg; App.render(); break; }
@@ -632,6 +677,7 @@
   document.addEventListener('change', e => {
     const t = e.target, s = S();
     if (t.dataset.pf) { const k = t.dataset.pf; let v = t.value; if (k === 'height') v = parseFloat(v.replace(',', '.')); if (k === 'weight') { const w = parseFloat(v.replace(',', '.')); if (w > 30 && w < 300) Store.logWeight(w); } else { s.profile[k] = v; recalc(); } syncReminders(); }
+    if (t.id === 'v-rate' || t.id === 'v-pitch') { s.settings[t.id === 'v-rate' ? 'vRate' : 'vPitch'] = +t.value; Store.save(); UCBridge.setVoice(s.settings.voiceName || '', +(s.settings.vRate || 0.98), +(s.settings.vPitch || 1.06)); }
     if (t.dataset.set) { const v = parseInt(t.value, 10); if (v > 0) { s.settings[t.dataset.set] = v; Store.save(); syncReminders(); } }
     if (t.dataset.rem) { const R = s.settings.reminders, [a, b] = t.dataset.rem.split('.'); if (a === 'meal') R.meals.times[+b][1] = t.value; else R[a][b] = t.value; Store.save(); syncReminders(); }
   });

@@ -52,7 +52,9 @@ public class Bridge {
                 int r = tts.setLanguage(new Locale("pt", "BR"));
                 ttsReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED;
                 if (!ttsReady) ttsReady = tts.setLanguage(Locale.getDefault()) >= 0;
-                tts.setSpeechRate(1.05f);
+                tts.setSpeechRate(prefs(a).getFloat("rate", 0.98f));
+                tts.setPitch(prefs(a).getFloat("pitch", 1.06f));
+                applyVoice(prefs(a).getString("voice", ""));
             }
         });
     }
@@ -63,6 +65,52 @@ public class Bridge {
     }
 
     @JavascriptInterface public String appVersion() { return version(a); }
+
+    // ---------- voz da treinadora ----------
+    /** Escolhe a voz salva; se não houver, prefere uma voz feminina em português do Brasil. */
+    void applyVoice(String name) {
+        try {
+            java.util.Set<android.speech.tts.Voice> all = tts.getVoices();
+            if (all == null) return;
+            android.speech.tts.Voice best = null; int bestScore = -1;
+            for (android.speech.tts.Voice v : all) {
+                if (!name.isEmpty() && v.getName().equals(name)) { tts.setVoice(v); return; }
+                Locale l = v.getLocale();
+                if (l == null || !"pt".equals(l.getLanguage()) || !"BR".equalsIgnoreCase(l.getCountry())) continue;
+                String n = v.getName().toLowerCase(Locale.ROOT);
+                int sc = 0;
+                if (n.contains("female") || n.contains("feminina")) sc += 50;
+                if (n.contains("-afs") || n.contains("-pte") || n.contains("-ptf")) sc += 30;
+                if (n.contains("male") && !n.contains("female")) sc -= 40;
+                if (n.contains("-ptd") || n.contains("-ptc")) sc -= 20;
+                if (!v.isNetworkConnectionRequired()) sc += 10;
+                sc += v.getQuality() / 100;
+                if (sc > bestScore) { bestScore = sc; best = v; }
+            }
+            if (best != null) tts.setVoice(best);
+        } catch (Exception ignored) { }
+    }
+    @JavascriptInterface public String voices() {
+        JSONArray arr = new JSONArray();
+        try {
+            String cur = tts.getVoice() != null ? tts.getVoice().getName() : "";
+            for (android.speech.tts.Voice v : tts.getVoices()) {
+                Locale l = v.getLocale();
+                if (l == null || !"pt".equals(l.getLanguage())) continue;
+                arr.put(new JSONObject().put("name", v.getName()).put("locale", l.toString()).put("net", v.isNetworkConnectionRequired()).put("quality", v.getQuality()).put("current", v.getName().equals(cur)));
+            }
+        } catch (Exception ignored) { }
+        return arr.toString();
+    }
+    @JavascriptInterface public void setVoice(String name, float rate, float pitch) {
+        prefs(a).edit().putString("voice", name).putFloat("rate", rate).putFloat("pitch", pitch).apply();
+        if (tts == null) return;
+        tts.setSpeechRate(rate); tts.setPitch(pitch);
+        applyVoice(name);
+    }
+    @JavascriptInterface public void openTtsSettings() {
+        ui.post(() -> open(new Intent("com.android.settings.TTS_SETTINGS")));
+    }
 
     // ---------- fala ----------
     @JavascriptInterface public void speak(String text) {

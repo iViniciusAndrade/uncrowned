@@ -69,6 +69,9 @@
     },
     stopTracking() { if (N && N.stopTracking) { try { N.stopTracking(); } catch (e) {} } if (B._geo != null) { navigator.geolocation.clearWatch(B._geo); B._geo = null; } },
     trackBuffer() { if (N && N.trackBuffer) { try { return JSON.parse(N.trackBuffer() || '[]'); } catch (e) {} } return []; },
+    voices() { if (N && N.voices) { try { return JSON.parse(N.voices() || '[]'); } catch (e) {} } try { return speechSynthesis.getVoices().filter(v => /^pt/.test(v.lang)).map(v => ({ name: v.name, locale: v.lang, net: !v.localService, current: false })); } catch (e) { return []; } },
+    setVoice(name, rate, pitch) { if (N && N.setVoice) { try { N.setVoice(name, rate, pitch); } catch (e) {} } B._webVoice = name; },
+    openTtsSettings() { if (N && N.openTtsSettings) { try { N.openTtsSettings(); return true; } catch (e) {} } return false; },
     appVersion() { if (N && N.appVersion) { try { return N.appVersion(); } catch (e) {} } return 'web'; }
   };
   window.UCBridge = B;

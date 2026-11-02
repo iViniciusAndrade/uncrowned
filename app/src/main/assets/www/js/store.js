@@ -31,6 +31,9 @@
     p28: { done: {} },
     aranha: { level: 1, done: {} },
     jaw: { week: 1, log: {} },
+    cal: { week: 1, done: {} },
+    hal: { week: 1, done: {} },
+    calis: false,
     history: [],
     rides: []
   });

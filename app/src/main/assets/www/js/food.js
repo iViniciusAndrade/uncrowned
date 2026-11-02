@@ -2,6 +2,7 @@
 (function () {
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ,/%-]/g, ' ').replace(/\s+/g, ' ').trim();
   const T = (window.TACO || []).map(r => ({ ref: 't:' + r[0], id: r[0], name: r[1], cat: r[2], kcal: r[3], p: r[4], c: r[5], g: r[6], f: r[7], na: r[8], src: 'TACO', key: norm(r[1]) }));
+  (window.GENERICOS || []).forEach(r => T.push({ ref: 'g:' + r[0], id: r[0], name: r[1], cat: 'Genéricos', kcal: r[2], p: r[3], c: r[4], g: r[5], f: r[6], na: r[7], src: 'IBGE', measures: (r[8] || []).map(m => ({ label: m[0], g: m[1] })), key: norm(r[1]) }));
   const BY = {}; T.forEach(f => BY[f.ref] = f);
   const MED = window.TACO_MEDIDAS || {};
 
@@ -21,6 +22,10 @@
     ['refrigerante', 'Refrigerante, tipo cola'], ['coca', 'Refrigerante, tipo cola'], ['suco de laranja', 'Laranja, pêra, suco'], ['cerveja', 'Cerveja, pilsen'], ['chocolate', 'Chocolate, ao leite'], ['pipoca', 'Pipoca, com óleo de soja, sem sal'], ['amendoim', 'Amendoim, torrado, salgado'], ['pasta de amendoim', 'Amendoim, torrado, salgado'],
     ['farofa', 'Mandioca, farofa, temperada'], ['farinha de mandioca', 'Farinha, de mandioca, torrada'], ['biscoito', 'Biscoito, salgado, cream cracker'], ['bolacha', 'Biscoito, salgado, cream cracker'], ['bolo', 'Bolo, pronto, chocolate'], ['coxinha', 'Coxinha de frango, frita'], ['pastel', 'Pastel, de carne, frito'], ['pao de queijo', 'Pão, de queijo, assado'], ['lasanha', 'Lasanha, massa fresca, cozida'], ['feijoada', 'Feijoada'], ['hamburguer', 'Hambúrguer, bovino, grelhado'], ['acai', 'Açaí, polpa, com xarope de guaraná e glucose']
   ];
+  SYN.push(['pizza de calabresa', 'Pizza de calabresa'], ['pizza calabresa', 'Pizza de calabresa'], ['pizza de mussarela', 'Pizza de muçarela'], ['pizza mussarela', 'Pizza de muçarela'], ['pizza de muçarela', 'Pizza de muçarela'], ['pizza portuguesa', 'Pizza portuguesa'], ['pizza', 'Pizza (sabor não especificado)'],
+    ['cachorro quente', 'Cachorro-quente'], ['hot dog', 'Cachorro-quente'], ['x burguer', 'Hambúrguer (sanduíche)'], ['xburguer', 'Hambúrguer (sanduíche)'], ['lanche', 'Hambúrguer (sanduíche)'], ['sanduiche', 'Hambúrguer (sanduíche)'], ['esfiha', 'Esfirra de carne'], ['esfirra', 'Esfirra de carne'],
+    ['nuggets', 'Nuggets de frango empanados'], ['sassami', 'Filé de frango (sassami)'], ['filezinho', 'Filé de frango (sassami)'], ['macarrao', 'Macarrão cozido'], ['espaguete', 'Macarrão cozido'], ['miojo', 'Macarrão, instantâneo'], ['brigadeiro', 'Brigadeiro'], ['sorvete', 'Sorvete industrializado'], ['acai com granola', 'Açaí com granola'],
+    ['strogonoff de carne', 'Estrogonofe de carne'], ['estrogonofe de carne', 'Estrogonofe de carne'], ['strogonoff', 'Estrogonofe de frango'], ['estrogonofe', 'Estrogonofe de frango'], ['macarrao a bolonhesa', 'Macarrão, molho bolognesa'], ['bolonhesa', 'Macarrão, molho bolognesa'], ['empada', 'Empada de frango']);
   const SYNR = [];
   SYN.forEach(([k, name]) => { if (!name) return; const n = norm(name); const f = T.find(x => x.key.startsWith(n)) || T.find(x => x.key.includes(n)); if (f) SYNR.push([norm(k), f.ref]); });
   SYNR.sort((a, b) => b[0].length - a[0].length);
@@ -42,12 +47,14 @@
       if (syn && syn[1] === f.ref) sc += 100;
       if (Store.S.fav.includes(f.ref)) sc += 25;
       if (Store.S.recent.includes(f.ref)) sc += 10;
-      if (f.src === 'TACO') sc += 15; // natural primeiro
+      if (f.src === 'TACO' || f.src === 'IBGE') sc += 15; // natural e genérico primeiro
       sc -= key.length / 12;
       out.push([sc, f]);
     });
     out.sort((a, b) => b[0] - a[0]);
-    return out.slice(0, limit || 40).map(x => x[1]);
+    const res = out.slice(0, limit || 40).map(x => x[1]);
+    if (syn) { const sf = get(syn[1]); if (sf && !res.includes(sf)) res.unshift(sf); }
+    return res.slice(0, limit || 40);
   }
   function guess(q) {
     const n = norm(q);
@@ -57,6 +64,7 @@
   function measures(f) {
     if (!f) return [];
     if (f.src === 'TACO') return (MED[f.id] || []).map(m => ({ label: m[0], g: m[1] }));
+    if (f.src === 'IBGE') return f.measures || [];
     return (f.measures || []);
   }
   function calc(f, grams) {

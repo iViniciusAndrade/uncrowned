@@ -62,8 +62,8 @@
   const UNITS = [
     [/^(g|gr|gramas?)\b/, 'g'], [/^(kg|quilos?)\b/, 'kg'], [/^(ml|mililitros?)\b/, 'ml'],
     [/^colher(?:es)? de (?:arroz|servir)(?= \S)/, 'colher de arroz (de servir)'], [/^colher(?:es)? de sopa|^colher(?:es)?(?! de (?:cha|sobremesa))/, 'colher de sopa'], [/^colher(?:es)? de sobremesa/, 'colher de sobremesa'], [/^colher(?:es)? de cha/, 'colher de chá'],
-    [/^conchas?/, 'concha'], [/^escumadeiras?/, 'escumadeira'], [/^fatias?/, 'fatia'], [/^pedacos?/, 'pedaço'], [/^copos? americanos?/, 'copo americano'], [/^copos?/, 'copo médio'], [/^xicaras?( de cha)?/, 'xícara de chá'], [/^xicaras? de cafe|^cafezinhos?/, 'xícara de café'],
-    [/^unidades?|^un\b/, 'unidade'], [/^bifes?/, 'bife'], [/^files?/, 'filé'], [/^pratos?/, 'prato'], [/^porc(?:ao|oes)/, 'porção'], [/^latas?/, 'lata'], [/^potes?/, 'pote']
+    [/^conchas?/, 'concha'], [/^escumadeiras?/, 'escumadeira'], [/^fatias?\b/, 'fatia'], [/^pedacos?\b/, 'pedaço'], [/^copos? americanos?/, 'copo americano'], [/^copos?/, 'copo médio'], [/^xicaras?( de cha)?/, 'xícara de chá'], [/^xicaras? de cafe|^cafezinhos?/, 'xícara de café'],
+    [/^unidades?|^un\b/, 'unidade'], [/^bifes?\b/, 'bife'], [/^files?\b/, 'filé'], [/^pratos?/, 'prato'], [/^porc(?:ao|oes)/, 'porção'], [/^latas?/, 'lata'], [/^potes?/, 'pote']
   ];
   const DEFAULT_G = { 'copo médio': 240, 'copo americano': 150, 'xícara de chá': 200, 'xícara de café': 50, 'colher de sopa': 15, 'colher de sobremesa': 10, 'colher de chá': 5, 'concha': 120, 'fatia': 25, 'pedaço': 60, 'prato': 300, 'lata': 350, 'pote': 170, 'bife': 100, 'filé': 100, 'porção': 100, 'colher de arroz (de servir)': 45, 'escumadeira': 80 };
   function foodItem(s) {
@@ -71,7 +71,9 @@
     if (!s) return null;
     let qty = null, unit = null, m;
     if ((m = s.match(/^(\d+(?:\.\d+)?)\s*/))) { qty = num(m[1]); s = s.slice(m[0].length); }
+    const beforeUnit = s;
     for (const [re, u] of UNITS) { const mm = s.match(re); if (mm) { unit = u; s = s.slice(mm[0].length).replace(/^\s*(de|do|da)\s+/, '').trim(); break; } }
+    if (!s && unit) { s = beforeUnit; unit = null; }
     s = s.replace(/\b(cozid[oa]s?|grelhad[oa]s?)\b/g, m2 => m2).trim();
     if (!s || s.length < 2) return null;
     const f = Food.guess(s); if (!f) return { miss: s };
@@ -81,8 +83,8 @@
     if (unit === 'g') grams = qty || 100;
     else if (unit === 'kg') grams = (qty || 1) * 1000;
     else if (unit === 'ml') grams = qty || 200;
-    else if (unit) { const mm = findM(unit); const g = mm ? mm.g : DEFAULT_G[unit] || 100; grams = g * (qty || 1); label = (qty || 1) + ' ' + unit; }
-    else { const u = findM('unidade') || findM('porção'); if (qty != null && u) { grams = u.g * qty; label = qty + ' ' + (u.label === 'unidade' ? (qty > 1 ? 'unidades' : 'unidade') : u.label); } else if (qty != null && qty > 20) grams = qty; else if (u) { grams = u.g * (qty || 1); label = (qty || 1) + ' ' + u.label; } else { grams = 100 * (qty || 1); label = ''; } }
+    else if (unit) { const mm = findM(unit) || (unit === 'fatia' || unit === 'pedaço' ? meas.find(x => x.label.startsWith(unit)) || meas[0] : null); const g = mm ? mm.g : DEFAULT_G[unit] || 100; grams = g * (qty || 1); label = (qty || 1) + ' ' + unit; }
+    else { const u = findM('unidade') || meas[0] || null; if (qty != null && u) { grams = u.g * qty; label = qty + ' ' + (u.label === 'unidade' ? (qty > 1 ? 'unidades' : 'unidade') : u.label); } else if (qty != null && qty > 20) grams = qty; else if (u) { grams = u.g * (qty || 1); label = (qty || 1) + ' ' + u.label; } else { grams = 100 * (qty || 1); label = ''; } }
     return { ref: f.ref, name: f.name, grams: Math.round(grams), label, heard: s, check: !unit && !findM('unidade') };
   }
   // "arroz feijao frango" sem separador vira três itens

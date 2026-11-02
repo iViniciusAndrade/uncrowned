@@ -69,7 +69,8 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
-                if ("tile.openstreetmap.org".equals(u.getHost())) return tile(u);
+                String h = u.getHost();
+                if (h != null && (h.endsWith("basemaps.cartocdn.com") || h.equals("tile.openstreetmap.org"))) return tile(u);
                 return null;
             }
         });
@@ -83,7 +84,7 @@ public class MainActivity extends Activity {
         try {
             String path = u.getPath();
             if (path == null) return null;
-            File f = new File(getCacheDir(), "tiles" + path);
+            File f = new File(getCacheDir(), "tiles/" + u.getHost() + path);
             if (!f.exists() || System.currentTimeMillis() - f.lastModified() > 14L * 86400000L) {
                 HttpURLConnection c = (HttpURLConnection) new URL(u.toString()).openConnection();
                 c.setRequestProperty("User-Agent", "Uncrowned/" + Bridge.version(this) + " (Android; UncrownedLabs)");

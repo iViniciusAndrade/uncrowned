@@ -11,34 +11,50 @@
     if (mode === 'ebike') return 4.5;
     return kmh < 16 ? 4 : kmh < 19.3 ? 6.8 : kmh < 22.5 ? 8 : kmh < 25.7 ? 10 : 12;
   }
+  // Filtro anti-tremedeira do GPS: parado na cadeira não pode virar distância, subida nem caloria
+  function minSpeed(mode) { return mode === 'caminhada' || mode === 'corrida' ? 0.7 : 1.3; } // m/s
   function onLoc(p) {
     if (!R.on || R.paused || !p || p.lat == null) return;
-    if (p.acc != null && p.acc > 35) return; // descarta leitura imprecisa
-    const last = R.pts[R.pts.length - 1];
+    const acc = p.acc != null ? p.acc : 15;
+    R.lastAcc = acc; R.lastFix = Date.now();
     const pt = { lat: p.lat, lon: p.lon, t: p.t || Date.now(), alt: p.alt, spd: p.speed };
-    if (last) {
-      if (pt.t <= last.t) return;
-      const d = hav(last, pt), dt = (pt.t - last.t) / 1000;
-      const v = p.speed != null && p.speed >= 0 ? p.speed : d / dt;
-      if (v > 33) return; // > 120 km/h: salto de GPS
-      if (d < 2 && v < 0.5) { R.speed = 0; return; }
-      R.dist += d;
-      if (v > 0.6) R.moving += dt;
-      R.speed = v * 3.6;
-      if (R.speed > R.max && (p.acc == null || p.acc < 20)) R.max = R.speed;
-      if (pt.alt != null && R.lastAlt != null && pt.alt - R.lastAlt > 1) R.gain += pt.alt - R.lastAlt;
+    if (R.dot && R.map) { try { R.dot.setLatLng([pt.lat, pt.lon]); } catch (e) {} }
+    if (acc > 20) return; // leitura imprecisa demais
+    const A = R.anchor;
+    if (!A) { R.anchor = pt; R.pts.push(pt); draw(); return; }
+    if (pt.t <= A.t) return;
+    const d = hav(A, pt), dt = (pt.t - A.t) / 1000;
+    const vCalc = d / dt, vGps = p.speed != null && p.speed >= 0 ? p.speed : null;
+    const v = vGps != null ? vGps : vCalc;
+    if (v > 33 || vCalc > 40) return; // salto de GPS
+    const moving = v >= minSpeed(R.mode) && d >= Math.max(4, acc * 0.6);
+    if (!moving) {
+      R.speed = vGps != null && vGps >= minSpeed(R.mode) ? vGps * 3.6 : 0;
+      if (window.App && App.tab === 'bike') updateStats();
+      return;
     }
-    if (pt.alt != null) R.lastAlt = pt.alt;
-    R.pts.push(pt);
+    R.dist += d;
+    R.moving += Math.min(dt, 10);
+    R.speed = v * 3.6;
+    R.sm = R.sm ? R.sm * 0.6 + R.speed * 0.4 : R.speed;
+    if (R.sm > R.max && acc <= 15) R.max = R.sm;
+    // altitude suavizada com histerese de 3 m; só conta subida quando está se movendo
+    if (pt.alt != null && (p.vacc == null || p.vacc <= 12)) {
+      R.altS = R.altS == null ? pt.alt : R.altS * 0.8 + pt.alt * 0.2;
+      if (R.altBase == null) R.altBase = R.altS;
+      if (R.altS - R.altBase >= 3) { R.gain += R.altS - R.altBase; R.altBase = R.altS; }
+      else if (R.altS < R.altBase) R.altBase = R.altS;
+    }
+    R.anchor = pt; R.pts.push(pt);
     draw(); if (window.App && App.tab === 'bike') updateStats();
   }
   UCBridge.on('loc', onLoc);
   UCBridge.on('locerr', e => App.toast('GPS: ' + (e && e.text || 'sem sinal')));
   function elapsed() { if (!R.start) return 0; const now = R.paused ? R.pauseAt : Date.now(); return Math.max(0, (now - R.start - R.pausedMs) / 1000); }
-  function kcal() { const h = (R.moving || elapsed()) / 3600; const avg = R.moving ? R.dist / R.moving * 3.6 : 0; return Math.round(met(R.mode, avg) * Store.weightNow() * h); }
+  function kcal() { if (R.dist < 20) return 0; const h = R.moving / 3600; const avg = R.moving ? R.dist / R.moving * 3.6 : 0; return Math.round(met(R.mode, avg) * Store.weightNow() * h); }
   function start(mode) {
     if (R.on) return;
-    Object.assign(R, { on: true, paused: false, pts: [], start: Date.now(), pausedMs: 0, dist: 0, moving: 0, max: 0, gain: 0, speed: 0, lastAlt: null, mode: mode || R.mode });
+    Object.assign(R, { on: true, paused: false, pts: [], start: Date.now(), pausedMs: 0, dist: 0, moving: 0, max: 0, gain: 0, speed: 0, anchor: null, sm: 0, altS: null, altBase: null, lastAcc: null, mode: mode || R.mode });
     const ok = UCBridge.startTracking();
     if (!ok) { R.on = false; App.toast('Não deu para ligar o GPS'); return; }
     UCBridge.keepAwake(true);
@@ -53,7 +69,7 @@
     UCBridge.stopTracking(); UCBridge.keepAwake(false); clearInterval(R.iv);
     const secs = Math.round(elapsed());
     R.on = false;
-    if (R.dist < 30 || secs < 20) { App.toast('Percurso muito curto, não foi salvo'); App.render(); return; }
+    if (R.dist < 50 || secs < 20) { App.toast(R.dist < 50 ? 'Nenhum deslocamento detectado, o percurso não foi salvo' : 'Percurso muito curto, não foi salvo'); App.render(); return; }
     const ride = { id: 'r' + Date.now().toString(36), t: R.start, d: Store.dkey(new Date(R.start)), mode: R.mode, secs, moving: Math.round(R.moving), dist: Math.round(R.dist), max: Math.round(R.max * 10) / 10, gain: Math.round(R.gain), kcal: kcal(), pts: simplify(R.pts.map(p => [Math.round(p.lat * 1e6) / 1e6, Math.round(p.lon * 1e6) / 1e6]), 6) };
     const S = Store.S; S.rides.unshift(ride);
     const d = Store.day(ride.d); d.workouts.push({ t: ride.t, d: ride.d, id: 'ride', name: MODES[ride.mode] + ' · ' + (ride.dist / 1000).toFixed(1) + ' km', mins: Math.round(secs / 60), kcal: ride.kcal }); d.kcalOut = (d.kcalOut || 0) + ride.kcal;
@@ -62,7 +78,7 @@
     if (S.settings.voice) UCBridge.speak('Percurso salvo. ' + (ride.dist / 1000).toFixed(1).replace('.', ',') + ' quilômetros.');
     App.render(); App.openRide(ride.id);
   }
-  function rebuild(buf) { const keep = R.on; R.pts = []; R.dist = 0; R.moving = 0; R.max = 0; R.gain = 0; R.lastAlt = null; const on = R.on; R.on = true; const pz = R.paused; R.paused = false; buf.forEach(onLoc); R.on = on; R.paused = pz; return keep; }
+  function rebuild(buf) { const keep = R.on; R.pts = []; R.dist = 0; R.moving = 0; R.max = 0; R.gain = 0; R.anchor = null; R.sm = 0; R.altS = null; R.altBase = null; const on = R.on; R.on = true; const pz = R.paused; R.paused = false; buf.forEach(onLoc); R.on = on; R.paused = pz; return keep; }
   function resync() { if (!R.on) return; const buf = UCBridge.trackBuffer(); if (buf && buf.length > R.pts.length) rebuild(buf); }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) resync(); });
 
@@ -79,23 +95,26 @@
   function mountMap(el, pts, live) {
     if (!window.L) { el.innerHTML = '<div class="mq-fallback">Mapa indisponível</div>'; return null; }
     const map = L.map(el, { zoomControl: false, attributionControl: true }).setView(pts.length ? pts[pts.length - 1] : [-23.6, -46.78], pts.length ? 15 : 11);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-    const line = L.polyline(pts, { color: '#ffffff', weight: 5, opacity: 0.95 }).addTo(map);
+    let errs = 0;
+    const tl = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 20, subdomains: 'abcd', attribution: '© OpenStreetMap · © CARTO' }).addTo(map);
+    tl.on('tileerror', () => { if (++errs === 6) { const n = document.createElement('div'); n.className = 'map-off'; n.textContent = 'Sem internet para carregar o mapa. O percurso continua sendo gravado.'; el.appendChild(n); } });
+    tl.on('tileload', () => { errs = 0; const n = el.querySelector('.map-off'); if (n) n.remove(); });
+    const line = L.polyline(pts, { color: '#1fbf5a', weight: 6, opacity: 0.95 }).addTo(map);
     if (pts.length > 1 && !live) { map.fitBounds(line.getBounds(), { padding: [24, 24] }); L.circleMarker(pts[0], { radius: 6, color: '#fff', fillColor: '#000', fillOpacity: 1, weight: 3 }).addTo(map); L.circleMarker(pts[pts.length - 1], { radius: 7, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 3 }).addTo(map); }
-    setTimeout(() => map.invalidateSize(), 120);
+    setTimeout(() => { try { if (map._loaded && map.getContainer().isConnected) map.invalidateSize(); } catch (e) {} }, 120);
     return { map, line };
   }
   function attachLive(el) {
-    if (R.map) { try { R.map.remove(); } catch (e) {} R.map = null; }
+    if (R.map) { try { R.map.remove(); } catch (e) {} R.map = null; R.dot = null; R.line = null; }
     const pts = R.pts.map(p => [p.lat, p.lon]);
     const m = mountMap(el, pts, true); if (!m) return;
     R.map = m.map; R.line = m.line;
-    R.dot = L.circleMarker(pts.length ? pts[pts.length - 1] : [-23.6, -46.78], { radius: 8, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 3 }).addTo(R.map);
+    R.dot = L.circleMarker(pts.length ? pts[pts.length - 1] : [-23.6, -46.78], { radius: 8, color: '#fff', fillColor: '#1fbf5a', fillOpacity: 1, weight: 3 }).addTo(R.map);
   }
   function draw() {
     if (!R.map || !R.pts.length) return;
     const ll = [R.pts[R.pts.length - 1].lat, R.pts[R.pts.length - 1].lon];
-    R.line.addLatLng(ll); R.dot.setLatLng(ll); R.map.panTo(ll, { animate: false });
+    try { R.line.addLatLng(ll); R.dot.setLatLng(ll); if (R.map._loaded && R.map.getContainer().isConnected) R.map.panTo(ll, { animate: false }); } catch (e) {}
   }
   function updateStats() {
     const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -104,6 +123,7 @@
     set('bk-dist', (R.dist / 1000).toFixed(2).replace('.', ','));
     set('bk-time', fmtT(el)); set('bk-avg', avg.toFixed(1).replace('.', ',')); set('bk-max', R.max.toFixed(1).replace('.', ','));
     set('bk-kcal', kcal()); set('bk-gain', Math.round(R.gain));
+    set('bk-gps', !R.on ? '' : R.lastAcc == null ? 'Procurando GPS…' : R.lastAcc > 20 ? 'Sinal fraco (' + Math.round(R.lastAcc) + ' m)' : 'GPS ±' + Math.round(R.lastAcc) + ' m');
   }
   function fmtT(s) { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
   function gmapsRide(r) {
