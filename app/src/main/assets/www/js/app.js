@@ -31,6 +31,7 @@
     $$('#tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === App.tab));
     if (Bike.R.map && App.tab !== 'bike') { try { Bike.R.map.remove(); } catch (e) {} Bike.R.map = null; }
     const v = $('#view');
+    document.body.classList.toggle('onb', !S().profile);
     if (!S().profile) { v.innerHTML = onboarding(); bindOnboarding(); return; }
     const views = { hoje: vHoje, treino: vTreino, comida: vComida, bike: vBike, perfil: vPerfil };
     v.innerHTML = (views[App.tab] || vHoje)();
@@ -44,39 +45,72 @@
   }
 
   // ---------- onboarding ----------
-  let ob = { step: 0, d: { sex: 'm', activity: 'leve', goal: 'perder', pace: 'normal', eq: [] } };
+  // 0 boas-vindas · 1 sobre você · 2 objetivo · 3 rotina e equipamento · 4 revisão e confirmação
+  const OB0 = () => ({ step: 0, d: { sex: 'm', activity: 'leve', goal: 'perder', pace: 'normal', eq: [], level: 1 }, err: {} });
+  let ob = OB0();
+  const OB_STEPS = 4;
+  function obAge(b) { if (!b) return null; const a = Store.age(b); return isNaN(a) ? null : a; }
+  function obValidate() {
+    const d = ob.d, e = {};
+    if (!d.name || d.name.trim().length < 2) e.name = 'Digite seu nome';
+    const a = obAge(d.birth);
+    if (!d.birth) e.birth = 'Informe a data de nascimento'; else if (a < 14 || a > 90) e.birth = 'Confira a data: deu ' + a + ' anos';
+    if (!(d.height >= 120 && d.height <= 230)) e.height = 'Altura em centímetros, ex.: 174';
+    if (!(d.weight >= 35 && d.weight <= 300)) e.weight = 'Peso em quilos, ex.: 90';
+    ob.err = e; return !Object.keys(e).length;
+  }
+  function obRead() {
+    const v = id => { const el = $(id); return el ? el.value : null; };
+    if ($('#ob-name')) { const d = ob.d; d.name = v('#ob-name').trim(); d.birth = v('#ob-birth'); d.height = parseFloat(String(v('#ob-h')).replace(',', '.')); d.weight = parseFloat(String(v('#ob-w')).replace(',', '.')); }
+  }
+  const obErr = k => ob.err[k] ? `<span class="ferr">${esc(ob.err[k])}</span>` : '';
+  const obSeg = (id, key, opts) => `<div class="seg" id="${id}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(ob.d[key]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   function onboarding() {
     const d = ob.d, st = ob.step;
-    const steps = '<div class="steps">' + [0, 1, 2].map(i => `<i class="${i <= st ? 'on' : ''}"></i>`).join('') + '</div>';
-    if (st === 0) return `<div class="ob">${steps}<h1>Bem-vindo ao Uncrowned</h1><p class="mute">Treino, comida, água, sono e bike num lugar só. Para calcular suas metas, preciso de alguns dados.</p>
-      <div class="note">Você pode falar tudo de uma vez. Toque no microfone e diga algo como “tenho 27 anos, 1,74, 90 quilos e quero perder peso”.</div>
-      <div class="field"><label for="ob-name">Nome</label><input class="input" id="ob-name" value="${esc(d.name || '')}" autocomplete="given-name"></div>
-      <div class="field"><label>Sexo biológico (usado na fórmula de gasto)</label><div class="seg" id="ob-sex"><button type="button" data-v="m" class="${d.sex === 'm' ? 'on' : ''}">Masculino</button><button type="button" data-v="f" class="${d.sex === 'f' ? 'on' : ''}">Feminino</button></div></div>
-      <div class="grid2"><div class="field"><label for="ob-birth">Nascimento</label><input class="input" id="ob-birth" type="date" value="${esc(d.birth || '')}"></div><div class="field"><label for="ob-h">Altura (cm)</label><input class="input" id="ob-h" inputmode="numeric" value="${esc(d.height || '')}"></div></div>
-      <div class="field"><label for="ob-w">Peso (kg)</label><input class="input" id="ob-w" inputmode="decimal" value="${esc(d.weight || '')}"></div>
-      <button class="btn pri block" type="button" id="ob-next">Continuar</button></div>`;
-    if (st === 1) return `<div class="ob">${steps}<h1>Seu objetivo</h1>
-      <div class="field"><label>Quero</label><div class="seg" id="ob-goal">${[['perder', 'Perder gordura'], ['manter', 'Manter'], ['ganhar', 'Ganhar massa']].map(([v, l]) => `<button type="button" data-v="${v}" class="${d.goal === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-      <div class="field"><label>Ritmo</label><div class="seg" id="ob-pace">${[['lento', 'Tranquilo'], ['normal', 'Normal'], ['rapido', 'Agressivo']].map(([v, l]) => `<button type="button" data-v="${v}" class="${d.pace === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-      <div class="field"><label>Quanto você se mexe hoje</label><div class="stack" id="ob-act">${Object.entries(Store.ACT).map(([k, v]) => `<button type="button" class="chip ${d.activity === k ? 'on' : ''}" data-v="${k}" style="text-align:left">${v[1]}</button>`).join('')}</div></div>
-      <div class="grid2"><button class="btn" type="button" id="ob-back">Voltar</button><button class="btn pri" type="button" id="ob-next">Continuar</button></div></div>`;
-    return `<div class="ob">${steps}<h1>O que você tem para treinar</h1><p class="mute">Os treinos se adaptam. Sem nada, tudo vira peso do corpo.</p>
-      <div class="chips" id="ob-eq">${Object.entries(EXDB.EQ_LABEL).map(([k, l]) => `<button type="button" class="chip ${d.eq.includes(k) ? 'on' : ''}" data-v="${k}">${l}</button>`).join('')}</div>
-      <div class="field"><label>Nível</label><div class="seg" id="ob-lvl">${[[1, 'Iniciante'], [2, 'Intermediário'], [3, 'Avançado']].map(([v, l]) => `<button type="button" data-v="${v}" class="${(d.level || 1) == v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-      <div class="grid2"><button class="btn" type="button" id="ob-back">Voltar</button><button class="btn pri" type="button" id="ob-done">Começar</button></div></div>`;
+    if (st === 0) return `<div class="ob ob-welcome"><div class="ob-hero"><img src="img/logo.png" alt="" width="96" height="113"><span class="lbl">UncrownedLabs</span><h1>Uncrowned</h1><p class="ink2">Treino, comida, água, sono, rosto e bike num lugar só. Leva uns 2 minutos para configurar.</p></div>
+      <ul class="ob-list"><li><b>Metas calculadas para você</b><span>Calorias, proteína e água a partir do seu corpo e objetivo</span></li><li><b>Fale em vez de digitar</b><span>“Comi 2 ovos e dormi 7 horas” e está anotado</span></li><li><b>Treinos que se adaptam</b><span>Com ou sem equipamento, no seu nível</span></li></ul>
+      <div class="ob-bar"><button class="btn pri block" type="button" id="ob-next">Começar</button></div></div>`;
+    const head = `<div class="ob-head"><button class="icon-btn" type="button" id="ob-back" aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><span class="tiny mute num">Passo ${st} de ${OB_STEPS}</span><span style="width:40px"></span></div><div class="steps">${[1, 2, 3, 4].map(i => `<i class="${i <= st ? 'on' : ''}"></i>`).join('')}</div>`;
+    let body = '', cta = 'Continuar';
+    if (st === 1) body = `<h1>Sobre você</h1><p class="mute">Usado só para calcular suas metas. Fica salvo neste celular.</p>
+      <div class="field"><label for="ob-name">Nome</label><input class="input ${ob.err.name ? 'bad' : ''}" id="ob-name" value="${esc(d.name || '')}" autocomplete="given-name" enterkeyhint="next">${obErr('name')}</div>
+      <div class="field"><label>Sexo biológico</label>${obSeg('ob-sex', 'sex', [['m', 'Masculino'], ['f', 'Feminino']])}<span class="tiny mute">A fórmula de gasto calórico muda conforme o sexo.</span></div>
+      <div class="field"><label for="ob-birth">Data de nascimento</label><input class="input ${ob.err.birth ? 'bad' : ''}" id="ob-birth" type="date" max="${Store.dkey()}" value="${esc(d.birth || '')}">${obErr('birth')}</div>
+      <div class="grid2"><div class="field"><label for="ob-h">Altura (cm)</label><input class="input ${ob.err.height ? 'bad' : ''}" id="ob-h" inputmode="numeric" placeholder="174" value="${esc(d.height || '')}">${obErr('height')}</div><div class="field"><label for="ob-w">Peso (kg)</label><input class="input ${ob.err.weight ? 'bad' : ''}" id="ob-w" inputmode="decimal" placeholder="90" value="${esc(d.weight || '')}">${obErr('weight')}</div></div>
+      <button class="btn ghost block" type="button" data-act="mic-ask" data-arg="Diga sua idade, altura, peso e objetivo. Ex.: tenho 27 anos, 1,74, 90 quilos e quero perder peso"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Preencher falando</button>`;
+    else if (st === 2) body = `<h1>Seu objetivo</h1><p class="mute">Dá para mudar depois em Perfil.</p>
+      <div class="stack" id="ob-goal">${[['perder', 'Perder gordura', 'Déficit calórico com proteína alta'], ['manter', 'Manter o peso', 'Comer no seu gasto e melhorar o corpo'], ['ganhar', 'Ganhar massa', 'Pequeno superávit para crescer']].map(([v, l, s]) => `<button type="button" class="opt ${d.goal === v ? 'on' : ''}" data-v="${v}"><b>${l}</b><span>${s}</span></button>`).join('')}</div>
+      ${d.goal !== 'manter' ? `<div class="field"><label>Ritmo</label>${obSeg('ob-pace', 'pace', [['lento', 'Tranquilo'], ['normal', 'Normal'], ['rapido', 'Agressivo']])}</div>` : ''}`;
+    else if (st === 3) body = `<h1>Sua rotina</h1><div class="field"><label>Quanto você se mexe hoje</label><div class="stack" id="ob-act">${Object.entries(Store.ACT).map(([k, v]) => `<button type="button" class="opt ${d.activity === k ? 'on' : ''}" data-v="${k}"><b>${v[1].split(',')[0]}</b><span>${esc(v[1].split(',').slice(1).join(',').trim())}</span></button>`).join('')}</div></div>
+      <div class="field"><label>Nível de treino</label>${obSeg('ob-lvl', 'level', [[1, 'Iniciante'], [2, 'Intermediário'], [3, 'Avançado']])}</div>
+      <div class="field"><label>Equipamento que você tem (opcional)</label><div class="chips" id="ob-eq">${Object.entries(EXDB.EQ_LABEL).map(([k, l]) => `<button type="button" class="chip ${d.eq.includes(k) ? 'on' : ''}" data-v="${k}">${l}</button>`).join('')}</div><span class="tiny mute">Sem nada marcado, os treinos usam só o peso do corpo.</span></div>`;
+    else {
+      const g = Store.calcGoals({ sex: d.sex, birth: d.birth, height: d.height, weight: d.weight, activity: d.activity, goal: d.goal, pace: d.pace });
+      const row = (l, v, step) => `<div class="li"><div class="grow"><div class="s">${l}</div><div class="t">${v}</div></div><button class="btn sm ghost" type="button" data-ob-edit="${step}">Editar</button></div>`;
+      body = `<h1>Confira seus dados</h1><p class="mute">Se estiver tudo certo, confirme para salvar.</p>
+        <div class="card tight"><div class="list">${row('Nome', esc(d.name), 1)}${row('Idade, altura e peso', obAge(d.birth) + ' anos · ' + fmt(d.height) + ' cm · ' + fmt(d.weight, 1) + ' kg', 1)}${row('Objetivo', { perder: 'Perder gordura', manter: 'Manter o peso', ganhar: 'Ganhar massa' }[d.goal] + (d.goal !== 'manter' ? ' · ritmo ' + { lento: 'tranquilo', normal: 'normal', rapido: 'agressivo' }[d.pace] : ''), 2)}${row('Rotina', Store.ACT[d.activity][1].split(',')[0] + ' · ' + ['', 'iniciante', 'intermediário', 'avançado'][d.level], 3)}${row('Equipamento', d.eq.length ? d.eq.map(x => EXDB.EQ_LABEL[x]).join(', ') : 'Só o peso do corpo', 3)}</div></div>
+        <span class="lbl">Suas metas por dia</span><div class="grid2"><div class="tile"><span class="lbl">Calorias</span><span class="v">${fmt(g.kcal)}</span><span class="tiny mute">gasto estimado ${fmt(g.tdee)}</span></div><div class="tile"><span class="lbl">Proteína</span><span class="v">${g.prot} g</span></div><div class="tile"><span class="lbl">Água</span><span class="v">${fmt(g.water)} ml</span></div><div class="tile"><span class="lbl">IMC</span><span class="v">${fmt(g.bmi, 1)}</span></div></div>`;
+      cta = 'Confirmar e salvar';
+    }
+    return `<div class="ob">${head}${body}<div class="ob-bar"><button class="btn pri block" type="button" id="ob-next">${cta}</button></div></div>`;
   }
   function bindOnboarding() {
     const d = ob.d;
-    const seg = (id, key, num) => { const el = $(id); if (!el) return; el.onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; d[key] = num ? +b.dataset.v : b.dataset.v; el.querySelectorAll('[data-v]').forEach(x => x.classList.toggle('on', x === b)); }; };
-    seg('#ob-sex', 'sex'); seg('#ob-goal', 'goal'); seg('#ob-pace', 'pace'); seg('#ob-act', 'activity'); seg('#ob-lvl', 'level', true);
+    const pick = (id, key, num) => { const el = $(id); if (!el) return; el.onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; obRead(); d[key] = num ? +b.dataset.v : b.dataset.v; App.render(); }; };
+    pick('#ob-sex', 'sex'); pick('#ob-goal', 'goal'); pick('#ob-pace', 'pace'); pick('#ob-act', 'activity'); pick('#ob-lvl', 'level', true);
     const eq = $('#ob-eq'); if (eq) eq.onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; const v = b.dataset.v; d.eq = d.eq.includes(v) ? d.eq.filter(x => x !== v) : d.eq.concat(v); b.classList.toggle('on'); };
-    const read = () => { if ($('#ob-name')) { d.name = $('#ob-name').value.trim(); d.birth = $('#ob-birth').value; d.height = parseFloat($('#ob-h').value.replace(',', '.')); d.weight = parseFloat($('#ob-w').value.replace(',', '.')); } };
-    const nx = $('#ob-next'); if (nx) nx.onclick = () => { read(); if (ob.step === 0 && (!(d.height > 120 && d.height < 230) || !(d.weight > 30 && d.weight < 300))) return App.toast('Confira altura em cm e peso em kg'); ob.step++; App.render(); };
-    const bk = $('#ob-back'); if (bk) bk.onclick = () => { ob.step--; App.render(); };
-    const dn = $('#ob-done'); if (dn) dn.onclick = () => {
-      const s = S(); s.profile = { name: d.name || '', sex: d.sex, birth: d.birth || '', height: d.height, weight: d.weight, activity: d.activity, goal: d.goal, pace: d.pace };
-      s.eq = d.eq; s.level = d.level || 1; s.aranha.level = Math.min(3, s.level); s.goals = Store.calcGoals(s.profile); Store.logWeight(d.weight); Store.save(); syncReminders(); App.go('hoje');
-      App.toast('Metas calculadas: ' + s.goals.kcal + ' kcal por dia');
+    $$('[data-ob-edit]').forEach(b => b.onclick = () => { ob.step = +b.dataset.obEdit; ob.fromReview = true; App.render(); });
+    ['#ob-name', '#ob-birth', '#ob-h', '#ob-w'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', () => { if (Object.keys(ob.err).length) { obRead(); const before = JSON.stringify(ob.err); obValidate(); if (JSON.stringify(ob.err) !== before) { ['name', 'birth', 'height', 'weight'].forEach(k => { const f = $({ name: '#ob-name', birth: '#ob-birth', height: '#ob-h', weight: '#ob-w' }[k]); if (!f) return; f.classList.toggle('bad', !!ob.err[k]); const sp = f.parentElement.querySelector('.ferr'); if (sp && !ob.err[k]) sp.remove(); }); } } }); });
+    const bk = $('#ob-back'); if (bk) bk.onclick = () => { obRead(); ob.step = ob.fromReview ? 4 : ob.step - 1; ob.fromReview = false; ob.err = {}; App.render(); };
+    const nx = $('#ob-next'); if (nx) nx.onclick = () => {
+      obRead();
+      if (ob.step === 1 && !obValidate()) { App.render(); const f = $('.input.bad'); if (f) { f.focus(); f.scrollIntoView({ block: 'center' }); } UCBridge.vibrate(60); return; }
+      if (ob.step < 4) { ob.step = ob.fromReview ? 4 : ob.step + 1; ob.fromReview = false; App.render(); $('#view').scrollTop = 0; return; }
+      if (!obValidate()) { ob.step = 1; App.render(); return; }
+      const s = S(); s.profile = { name: d.name, sex: d.sex, birth: d.birth, height: d.height, weight: d.weight, activity: d.activity, goal: d.goal, pace: d.pace };
+      s.eq = d.eq; s.level = d.level || 1; s.aranha.level = Math.min(3, s.level); s.goalsManual = false; s.goals = Store.calcGoals(s.profile); Store.logWeight(d.weight); Store.flush(); syncReminders();
+      App.welcome = true; ob = OB0(); App.go('hoje');
+      App.toast('Perfil salvo');
     };
   }
 
@@ -91,7 +125,8 @@
     const jawToday = !!s.jaw.log[k];
     const jawStreak = Store.streak(x => !!s.jaw.log[x]);
     const name = s.profile.name ? ', ' + esc(s.profile.name.split(' ')[0]) : '';
-    return `<div class="hero"><span class="lbl">${dateLabel(k)} · ${new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}</span><h1>${greet()}${name}</h1></div>
+    const wel = App.welcome ? `<div class="card"><span class="lbl">Tudo pronto</span><h2>Suas metas estão salvas</h2><p class="small ink2">${fmt(g.kcal)} kcal, ${g.prot} g de proteína e ${fmt(g.water)} ml de água por dia. Para começar, registre um copo de água ou toque no microfone e conte o que comeu hoje.</p><button class="btn sm" type="button" data-act="welcome-ok">Entendi</button></div>` : '';
+    return wel + `<div class="hero"><span class="lbl">${dateLabel(k)} · ${new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}</span><h1>${greet()}${name}</h1></div>
     <div class="card click" data-act="go" data-arg="comida"><div class="row" style="gap:16px">${ring(t.kcal, g.kcal, 132, fmt(Math.max(0, left)), left >= 0 ? 'kcal restantes' : 'kcal acima')}<div class="stack" style="flex:1;gap:10px">
       <div><div class="row between small"><span>Proteína</span><span class="num mute">${fmt(t.p)} / ${g.prot} g</span></div>${bar(t.p, g.prot)}</div>
       <div><div class="row between small"><span>Carboidrato</span><span class="num mute">${fmt(t.c)} / ${g.carb} g</span></div>${bar(t.c, g.carb)}</div>
@@ -496,7 +531,7 @@
       else if (a.type === 'sleep') { Store.day().sleep = a.hours; Store.save(); done.push('sono ' + fmt(a.hours, 2) + ' h'); }
       else if (a.type === 'weight') { Store.logWeight(a.kg); done.push(fmt(a.kg, 1) + ' kg'); }
       else if (a.type === 'food') { const d = Store.day(); a.items.forEach(it => { const f = Food.get(it.ref); d.meals.push(Food.entry(f, it.grams, a.meal, it.label)); Food.touchRecent(f.ref); }); Store.save(); if (a.items.length) done.push(a.items.length + (a.items.length > 1 ? ' alimentos' : ' alimento')); }
-      else if (a.type === 'profile') { const p = s.profile || {}; const d = a.data; if (d.age) { const y = new Date().getFullYear() - d.age; p.birth = p.birth && +p.birth.slice(0, 4) === y ? p.birth : y + '-01-01'; } ['height', 'weight', 'goal', 'sex', 'activity'].forEach(k => { if (d[k] != null) p[k] = d[k]; }); if (!s.profile) { ob.d = Object.assign(ob.d, p); } else { s.profile = p; if (d.weight) Store.logWeight(d.weight); recalc(); } done.push('perfil'); }
+      else if (a.type === 'profile') { const p = s.profile || {}; const d = a.data; if (d.age) { const y = new Date().getFullYear() - d.age; p.birth = p.birth && +p.birth.slice(0, 4) === y ? p.birth : y + '-01-01'; } ['height', 'weight', 'goal', 'sex', 'activity'].forEach(k => { if (d[k] != null) p[k] = d[k]; }); if (!s.profile) { ob.d = Object.assign(ob.d, p); if (ob.step < 1) ob.step = 1; } else { s.profile = p; if (d.weight) Store.logWeight(d.weight); recalc(); } done.push('perfil'); }
       else if (a.type === 'workout') { const o = a.params; App.genOpts = Object.assign({ minutes: 20, focus: 'corpo', eq: s.eq.slice(), level: s.level, noImpact: false, lim: s.lim.slice(), format: 'circuito' }, Object.fromEntries(Object.entries(o).filter(([k, v]) => v != null))); gen = EXDB.generate(Object.assign({}, App.genOpts, { seed: Date.now() })); openAfter = () => App.go('treino', 'montar'); }
       else if (a.type === 'program') { openAfter = () => { if (a.id === 'aranha') { if (a.session) previewAranha(a.session); else App.go('treino', 'programas'); } else if (a.id === 'jaw') App.go('treino', 'rosto'); else { App.go('treino', 'programas'); const n = nextP28(); if (n) previewP28(n); } }; }
       else if (a.type === 'nav') openAfter = () => App.go(a.tab, a.sub);
@@ -527,6 +562,7 @@
     const act = t.dataset.act, arg = t.dataset.arg, s = S();
     switch (act) {
       case 'go': App.go(arg, t.dataset.sub); break;
+      case 'welcome-ok': App.welcome = false; App.render(); break;
       case 'sub': App.sub.treino = arg; App.render(); break;
       case 'water': Store.addWater(+arg); UCBridge.vibrate(30); App.render(); App.toast('+' + arg + ' ml'); break;
       case 'water-undo': { const d = Store.day(); const l = d.waterLog.pop(); if (l) { d.water = Math.max(0, d.water - l[1]); Store.save(); App.render(); } break; }
@@ -585,7 +621,7 @@
       case 'restore': App.sheet(`<h2>Importar backup</h2><p class="small mute">Cole aqui o conteúdo do backup. Isso substitui tudo o que está no app.</p><textarea class="input" id="rs"></textarea><button class="btn pri block" type="button" data-act="restore-ok">Importar</button>`); break;
       case 'restore-ok': try { const o = JSON.parse($('#rs').value); if (!o || typeof o !== 'object' || !('days' in o)) throw 0; Store.replace(o); App.closeSheet(); App.render(); syncReminders(); App.toast('Backup importado'); } catch (er) { App.toast('Esse texto não é um backup válido'); } break;
       case 'wipe': App.sheet(`<h2>Apagar tudo?</h2><p class="mute">Perfil, comidas, treinos e percursos somem deste celular. Não dá para desfazer.</p><button class="btn danger block" type="button" data-act="wipe-ok">Apagar tudo</button><button class="btn ghost block" type="button" data-close>Cancelar</button>`); break;
-      case 'wipe-ok': Store.reset(); ob = { step: 0, d: { sex: 'm', activity: 'leve', goal: 'perder', pace: 'normal', eq: [] } }; App.closeSheet(); App.go('hoje'); break;
+      case 'wipe-ok': Store.reset(); ob = OB0(); App.closeSheet(); App.go('hoje'); break;
     }
   });
   document.addEventListener('input', e => {
