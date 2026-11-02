@@ -254,8 +254,14 @@
     const fl = { corpo: 'corpo todo', superior: 'parte de cima', inferior: 'pernas', core: 'abdômen e core', cardio: 'cardio', pernas_core: 'pernas e abdômen' }[o.focus] || 'corpo todo';
     const eqName = eqs.length ? eqs.map(e => EQ_LABEL[e]).join(', ') : 'sem equipamento';
     if (o.format === 'series') {
-      const sets = lvl === 1 ? 3 : 4, reps = lvl === 1 ? '10' : lvl === 2 ? '12' : '15';
-      return { id: 'gen', name: 'Treino de ' + fl, short: (o.minutes || 20) + ' min · ' + eqName + ' · séries', generated: o, blocks: [{ kind: 'list', label: 'Aquecimento', secs: 30, items: WARM }, { kind: 'sets', label: 'Séries', items: items.slice(0, Math.max(3, Math.round(((o.minutes || 20) - 5) / 4))).map(id => [id, sets, X[id].pat === 'core' && /prancha|urso|cadeirinha/.test(id) ? '30 s' : reps, lvl === 3 ? 60 : 75]) }, { kind: 'list', label: 'Alongamento', secs: 30, items: COOL }] };
+      const reps = lvl === 1 ? '10' : lvl === 2 ? '12' : '15', rest = lvl === 3 ? 60 : 75, avail = total - warm - cool;
+      // ajusta exercícios e séries ao tempo pedido: cada série ~ repetições × 2,7 s, mais o descanso
+      const perEx = n => n * (+reps * 2.7 + 3) + n * rest;
+      let sets = lvl === 1 ? 3 : 4;
+      while (sets > 2 && Math.round(avail / perEx(sets)) < 2) sets--;
+      let nSeries = Math.max(2, Math.min(items.length, Math.round(avail / perEx(sets))));
+      while (sets < 5 && nSeries === items.length && avail - nSeries * perEx(sets) > nSeries * perEx(1) * 0.8) sets++;
+      return { id: 'gen', name: 'Treino de ' + fl, short: (o.minutes || 20) + ' min · ' + eqName + ' · séries', generated: o, blocks: [{ kind: 'list', label: 'Aquecimento', secs: 30, items: WARM }, { kind: 'sets', label: 'Séries', items: items.slice(0, nSeries).map(id => [id, sets, X[id].pat === 'core' && /prancha|urso|cadeirinha/.test(id) ? '30 s' : reps, lvl === 3 ? 60 : 75]) }, { kind: 'list', label: 'Alongamento', secs: 30, items: COOL }] };
     }
     return { id: 'gen', name: 'Treino de ' + fl, short: (o.minutes || 20) + ' min · ' + eqName, generated: o, blocks: [{ kind: 'list', label: 'Aquecimento', secs: 30, items: WARM }, { kind: 'timed', label: 'Circuito', work: wr[0], rest: wr[1], rounds, rr: 60, items }, { kind: 'list', label: 'Alongamento', secs: 30, items: COOL }] };
   }

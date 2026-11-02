@@ -159,15 +159,23 @@
   // corrige (ou cria) um produto com os valores do rótulo. Mantém o mesmo ref/código para o scanner achar depois.
   function fromLabel(o) { return addCustom(Object.assign({ src: 'Rótulo', cat: 'Industrializados' }, o)); }
   // confere se os números por 100 g fazem sentido. Devolve lista de avisos em português.
+  // Produtos industrializados em que cada marca tem uma receita: a média da tabela é só um último recurso.
+  const BRANDY = /^acai, polpa, com xarope|^acai com granola|^chocolate,|^achocolatado|achocolatado$|^mandioca, farofa|^macarrao, instantaneo|^biscoito,|^bolo, (pronto|mistura)|^cereal matinal|^cereais, (milho, flocos|mistura)|^farinha, lactea|tipo chips, industrializada|^margarina|^maionese|^sorvete industrializado|^gelatina|^nuggets|^hamburguer, bovino|^bebida lactea|^iogurte, sabor|requeijao|molho industrializado|^refrigerante/;
+  function brandy(f) { return !!f && (f.src === 'TACO' || f.src === 'IBGE') && BRANDY.test(f.key || norm(f.name)); }
+  // bebida alcoólica: as calorias vêm do álcool (7 kcal/g), que não é proteína, carboidrato nem gordura
+  const ALC = /\b(cervejas?|aguardente|cachacas?|cachaça|vinhos?|vodka|whisky|uisque|licor|caipirinha|caipiroska|espumante|champanhe|gin|rum|tequila|saque|chopp?e?|ice|drinks?|catuaba|conhaque|steinhaeger|vermute|sidra|hidromel)\b/;
+  function alcohol(f) { return !!f && ALC.test(norm((f.name || '') + ' ' + (f.brand || '') + ' ' + (f.cat || ''))); }
   // hardOnly: só o que é fisicamente impossível (usado no aviso do produto); o resto vira "confira" no formulário.
-  function sanity(v, unit, hardOnly) {
+  function sanity(v, unit, hardOnly, name) {
     const w = [], n = x => +x || 0, u = unit || 'g', sum = n(v.p) + n(v.c) + n(v.g); // carboidrato da TACO e de rótulos já inclui ou exclui a fibra: não soma fibra
     if (v.kcal != null && n(v.kcal) > 900) w.push('Mais de 900 kcal em 100 ' + u + ' não existe (nem óleo passa de 900). Devem ser valores da porção, não de 100 ' + u + '.');
     if (sum > 102) w.push('Proteína + carboidrato + gordura somam ' + Math.round(sum) + ' g em 100 ' + u + ', o que não cabe. Confira se não são valores da porção.');
     if (hardOnly) return w;
     const est = 4 * n(v.p) + 4 * n(v.c) + 9 * n(v.g), k = n(v.kcal);
     // mais caloria que os macros explicam (falta um número, ou tem álcool); ou bem menos (vírgula errada, valor de outra coluna)
-    if (v.kcal != null && est > 0 && (k > est + Math.max(40, est * 0.5) || (est > 30 && k < est * 0.5))) w.push('As calorias (' + Math.round(k) + ') não batem com os macros (dá ' + Math.round(est) + ' kcal pela conta 4·P + 4·C + 9·G). Confira um dos números' + (k > est ? ' (bebida alcoólica é normal ter mais)' : '') + '.');
+    const alc = alcohol({ name: name || v.name || '', brand: v.brand, cat: v.cat });
+    if (alc && k > est && k <= 400) { /* álcool explica a diferença */ }
+    else if (v.kcal != null && est > 0 && (k > est + Math.max(40, est * 0.5) || (est > 30 && k < est * 0.5))) w.push('As calorias (' + Math.round(k) + ') não batem com os macros (dá ' + Math.round(est) + ' kcal pela conta 4·P + 4·C + 9·G). Confira um dos números' + (k > est ? ' (bebida alcoólica é normal ter mais)' : '') + '.');
     if (v.na != null && n(v.na) > 40000) w.push('Sódio acima de 40 g por 100 ' + u + ': deve ter sido digitado errado (o campo é em mg).');
     return w;
   }
@@ -176,5 +184,5 @@
     let n = 0; Object.values(Store.S.days).forEach(d => (d.meals || []).forEach((e, i) => { if (e.ref !== f.ref) return; const c = calc(f, e.grams); d.meals[i] = Object.assign({}, e, c, { name: f.name }); n++; }));
     if (n) Store.save(); return n;
   }
-  window.Food = { fromLabel, sanity, recalcEntries, norm, T, get, search, guess, measures, calc, entry, touchRecent, addCustom, lookupBarcode, byBarcode, SYNR, searchOnline, saveRemote };
+  window.Food = { fromLabel, sanity, recalcEntries, brandy, alcohol, norm, T, get, search, guess, measures, calc, entry, touchRecent, addCustom, lookupBarcode, byBarcode, SYNR, searchOnline, saveRemote };
 })();

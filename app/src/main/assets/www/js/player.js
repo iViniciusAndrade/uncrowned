@@ -63,13 +63,22 @@
   const sayNum = n => n <= 20 ? NUMS[n] : String(n);
   function tempo(ex) { if (!ex) return 2.5; if (ex.pat === 'cardio') return 1.3; if (ex.pat === 'mob' || ex.pat === 'face') return 2.5; if (ex.pat === 'core') return 2.4; return 2.7; }
   function repTarget(reps) { if (!reps) return null; const m = String(reps).match(/^(\d+)(\s*por lado)?/); if (!m) return null; return { n: +m[1] * (m[2] ? 2 : 1), sides: !!m[2], per: +m[1] }; }
+  // duração prevista de cada etapa (s): tempo da etapa, ou repetições × ritmo da treinadora
+  function stepSecs(x) { return x.secs || (x.reps ? (repTarget(x.reps) ? repTarget(x.reps).n * tempo(x.ex) + 3 : 40) : 0); }
+  function stepMet(x) { return x.ph === 'rest' || x.ph === 'prep' ? Energy.REST : x.ph === 'amrap' ? Energy.CIRCUIT : Energy.met(x.ex); }
+  // estimativa antes de treinar: soma etapa por etapa (Compêndio 2024, MET corrigido pelo seu gasto basal)
+  function estimate(session) {
+    const steps = build(session); let secs = 0, gross = 0, net = 0;
+    steps.forEach(x => { const t = stepSecs(x); secs += t; const k = Energy.kcal(stepMet(x), t / 60); gross += k.gross; net += k.net; });
+    return { mins: Math.max(1, Math.round(secs / 60)), kcal: Math.round(gross), net: Math.round(net) };
+  }
   function sessionMinutes(steps) { let t = 0; steps.forEach(x => { t += x.secs || (x.reps ? (repTarget(x.reps) ? repTarget(x.reps).n * tempo(x.ex) : 45) : 0); }); return Math.max(1, Math.round(t / 60)); }
 
   // ---------- abertura: apresenta o treino e espera o play ----------
   function open(session, meta, opts) {
     if (!session) return;
     opts = opts || {};
-    P.session = session; P.meta = meta || {}; P.steps = build(session); P.i = -1; P.paused = false; P.done = false; P.kcal = 0; P.rounds = 0; P.active = 0; P.started = false; P.auto = !!opts.auto; P.told = {};
+    P.session = session; P.meta = meta || {}; P.steps = build(session); P.i = -1; P.paused = false; P.done = false; P.kcal = 0; P.net = 0; P.rounds = 0; P.active = 0; P.started = false; P.auto = !!opts.auto; P.told = {};
     const el = $('#player'); el.classList.add('open'); el.setAttribute('aria-hidden', 'false');
     if (P.auto) { UCBridge.keepAwake(true); startRun(); if (Store.S.settings.handsFree) setTimeout(listenLoop, 4000); return; }
     const blocks = session.blocks.map(b => {
@@ -78,11 +87,11 @@
       const rows = items.map(([id, a, c]) => { const ex = exOf(id); const r = b.kind === 'sets' ? a + ' × ' + c : b.kind === 'circuit' || b.kind === 'amrap' ? a : b.kind === 'ladder' ? a + '× o degrau' : ''; return `<div class="row between small" style="padding:6px 0;border-bottom:1px solid var(--line)"><span>${esc(ex.n)}</span><span class="mute num">${esc(r)}</span></div>`; }).join('');
       return `<div class="stack" style="gap:2px"><div class="row between"><b class="small">${esc(b.label)}</b><span class="tiny mute">${esc(info)}</span></div>${rows}</div>`;
     }).join('');
-    const mins = sessionMinutes(P.steps), n = new Set(P.steps.filter(x => x.ex).map(x => x.ex.id)).size;
+    const mins = sessionMinutes(P.steps), n = new Set(P.steps.filter(x => x.ex).map(x => x.ex.id)).size, est = estimate(session);
     el.className = 'player open';
     el.innerHTML = `<div class="ph-top"><button class="btn sm ghost" id="pl-exit" type="button"><svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M15 6l-6 6 6 6"/></svg>Voltar</button><span class="tiny mute">Treino guiado</span><button class="btn sm ghost" id="pl-voice" type="button">${Store.S.settings.voice ? 'Voz ligada' : 'Voz desligada'}</button></div>
       <div class="intro"><div class="mq" id="pl-mq" style="max-height:26vh;width:min(100%,26vh);align-self:center"></div><span class="lbl">Hoje</span><h1>${esc(session.name)}</h1>${session.short ? `<p class="small ink2">${esc(session.short)}</p>` : ''}
-        <div class="grid3"><div class="tile"><span class="lbl">Tempo</span><span class="v">~${mins} min</span></div><div class="tile"><span class="lbl">Exercícios</span><span class="v">${n}</span></div><div class="tile"><span class="lbl">Etapas</span><span class="v">${P.steps.length}</span></div></div>
+        <div class="grid3"><div class="tile"><span class="lbl">Tempo</span><span class="v">~${mins} min</span></div><div class="tile"><span class="lbl">Exercícios</span><span class="v">${n}</span></div><div class="tile"><span class="lbl">Gasto</span><span class="v">~${est.kcal}</span><span class="tiny mute">kcal</span></div></div>
         <div class="card tight">${blocks}</div>
         <p class="tiny mute">A treinadora fala cada exercício, conta as repetições e avisa o tempo. Diga “pausa”, “continua”, “próximo” ou “feito” a qualquer momento.</p></div>
       <div class="ctrl intro-ctrl"><button class="btn pri play" id="pl-play" type="button" aria-label="Começar o treino"><svg viewBox="0 0 24 24" style="width:30px;height:30px"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg><span>Começar</span></button></div>`;
@@ -140,8 +149,8 @@
   function accrue() {
     const s = step(); if (!s || !P.stepStart || P.paused) return;
     const secs = (Date.now() - P.stepStart) / 1000; if (secs <= 0) return;
-    const met = s.ph === 'rest' || s.ph === 'prep' ? 1.8 : (s.ex ? s.ex.met : 4) * (s.ph === 'work' || s.ph === 'amrap' ? 1 : 0.75);
-    P.kcal += met * Store.weightNow() * secs / 3600;
+    const k = Energy.kcal(stepMet(s), secs / 60);
+    P.kcal += k.gross; P.net = (P.net || 0) + k.net;
     if (s.ph !== 'rest' && s.ph !== 'prep') P.active += secs;
     P.stepStart = Date.now();
   }
@@ -215,11 +224,11 @@
   function finish() {
     accrue(); clearInterval(P.iv); P.done = true;
     const mins = Math.max(1, Math.round((Date.now() - (P.start || Date.now())) / 60000));
-    const kcal = Math.round(P.kcal);
+    const kcal = Math.round(P.kcal), net = Math.round(P.net || 0);
     const S = Store.S, d = Store.day(), k = Store.dkey();
-    const rec = { t: Date.now(), d: k, id: P.session.id, name: P.session.name, mins, kcal, rounds: P.rounds || null };
+    const rec = { t: Date.now(), d: k, id: P.session.id, name: P.session.name, mins, kcal, net, rounds: P.rounds || null };
     S.history.unshift(rec); S.history = S.history.slice(0, 400);
-    d.workouts.push(rec); d.kcalOut = (d.kcalOut || 0) + kcal;
+    d.workouts.push(rec); d.kcalOut = (d.kcalOut || 0) + kcal; d.kcalNet = (d.kcalNet || 0) + net;
     if (P.meta.p28) S.p28.done[P.meta.p28] = k;
     if (P.meta.aranha) S.aranha.done[k] = P.session.id;
     if (P.meta.jaw) { S.jaw.log[k] = true; d.jaw = true; }
@@ -230,7 +239,7 @@
     say('Acabou! Mandou muito bem. Foram ' + mins + ' minutos e cerca de ' + kcal + ' calorias. Agora bebe uma água.');
     const pl = $('#player'); pl.className = 'player open';
     const main = pl.querySelector('.ph-main') || pl;
-    main.innerHTML = `<span class="phase">Concluído</span><div class="ex-name">${esc(P.session.name)}</div><div class="grid3" style="width:100%;max-width:420px"><div class="tile"><span class="lbl">Tempo</span><span class="v">${mins} min</span></div><div class="tile"><span class="lbl">Gasto</span><span class="v">${kcal} kcal</span></div><div class="tile"><span class="lbl">${P.rounds ? 'Voltas' : 'Etapas'}</span><span class="v">${P.rounds || P.steps.length}</span></div></div><p class="tiny mute">Gasto estimado por MET (Compêndio de Atividades Físicas) e o seu peso.</p>`;
+    main.innerHTML = `<span class="phase">Concluído</span><div class="ex-name">${esc(P.session.name)}</div><div class="grid3" style="width:100%;max-width:420px"><div class="tile"><span class="lbl">Tempo</span><span class="v">${mins} min</span></div><div class="tile"><span class="lbl">Gasto</span><span class="v">${kcal} kcal</span></div><div class="tile"><span class="lbl">${P.rounds ? 'Voltas' : 'Etapas'}</span><span class="v">${P.rounds || P.steps.length}</span></div></div><p class="tiny mute">${net} kcal acima do que você gastaria parado. Estimativa pelo Compêndio de Atividades Físicas 2024, com o MET corrigido pelo seu gasto basal.</p>`;
     const ctrl = pl.querySelector('.ctrl'); if (ctrl) ctrl.innerHTML = '<span></span><button class="btn pri" id="pl-close" type="button">Fechar</button><span></span>';
     $('#pl-close').onclick = close;
     if (window.App) App.refresh();
@@ -269,5 +278,5 @@
     if (ev.type === 'final') { const a = Voice.parse(ev.text)[0]; if (a && a.type === 'control') { command(a.cmd); App.toast('“' + ev.text + '”'); } else if (/\b(play|comecar|começar|bora|vamos)\b/i.test(ev.text) && !P.started) startRun(); }
     if ((ev.type === 'end' || ev.type === 'error') && Store.S.settings.handsFree) setTimeout(listenLoop, 900);
   });
-  window.Player = { open, close, command, isOpen, build, startRun, back };
+  window.Player = { open, close, command, isOpen, build, startRun, back, estimate };
 })();

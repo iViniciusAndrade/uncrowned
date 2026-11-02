@@ -134,6 +134,11 @@
 
   const playBtn = (kind, arg, label) => `<button class="play-btn" type="button" data-act="play" data-kind="${kind}" data-arg="${esc(arg)}" aria-label="Começar ${esc(label)} com a treinadora"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg></button>`;
   App.playBtn = playBtn;
+  // estimativa de gasto da sessão (Compêndio 2024), com cache por sessão
+  const estC = {};
+  const est = sess => { if (!sess) return null; const key = sess.name + '|' + JSON.stringify(sess.blocks).length + '|' + Math.round(Energy.rest() * 100) + '|' + (S().calis ? 1 : 0) + (S().eq || []).join(); return estC[key] || (estC[key] = Player.estimate(sess)); };
+  const estTxt = sess => { const e = est(sess); return e ? '~' + e.mins + ' min · ~' + e.kcal + ' kcal' : ''; };
+  App.estTxt = estTxt;
 
   // ---------- HOJE ----------
   function nextP28() { for (let d = 1; d <= 28; d++) if (!S().p28.done[d]) return d; return null; }
@@ -162,8 +167,8 @@
       <button class="tile" type="button" data-act="weight"><span class="lbl">Peso</span><span class="v">${fmt(Store.weightNow(), 1)} kg</span><span class="tiny mute">IMC ${fmt(g.bmi, 1)}</span></button>
     </div>
     <div class="card"><span class="lbl">Treino de hoje</span>
-      ${p28 ? `<div class="li click" data-act="p28" data-arg="${p28}"><div class="grow"><div class="t">28 Dias em Casa · dia ${p28}</div><div class="s">${esc(EXDB.day28(p28).short)}</div></div>${playBtn('p28', p28, '28 Dias, dia ' + p28)}</div>` : ''}
-      ${arSess ? `<div class="li click" data-act="aranha" data-arg="${ar[1]}"><div class="grow"><div class="t">Protocolo Aranha · ${esc(arSess.name)}</div><div class="s">${ar[0]} · nível ${s.aranha.level}</div></div>${playBtn('aranha', ar[1], arSess.name)}</div>` : `<div class="li"><div class="grow"><div class="t">Protocolo Aranha</div><div class="s">Hoje é descanso no plano semanal</div></div></div>`}
+      ${p28 ? `<div class="li click" data-act="p28" data-arg="${p28}"><div class="grow"><div class="t">28 Dias em Casa · dia ${p28}</div><div class="s">${esc(EXDB.day28(p28).short)} · ${estTxt(EXDB.day28(p28))}</div></div>${playBtn('p28', p28, '28 Dias, dia ' + p28)}</div>` : ''}
+      ${arSess ? `<div class="li click" data-act="aranha" data-arg="${ar[1]}"><div class="grow"><div class="t">Protocolo Aranha · ${esc(arSess.name)}</div><div class="s">${ar[0]} · nível ${s.aranha.level} · ${estTxt(arSess)}</div></div>${playBtn('aranha', ar[1], arSess.name)}</div>` : `<div class="li"><div class="grow"><div class="t">Protocolo Aranha</div><div class="s">Hoje é descanso no plano semanal</div></div></div>`}
       <div class="li click" data-act="go" data-arg="treino" data-sub="montar"><div class="grow"><div class="t">Montar um treino agora</div><div class="s">Escolha tempo, foco e equipamento, ou fale</div></div><span class="pill">Montar</span></div></div>
     <div class="card click" data-act="go" data-arg="treino" data-sub="rosto"><div class="row between"><span class="lbl">Rosto e mandíbula</span>${jawToday ? '<span class="pill solid">Feito hoje</span>' : '<span class="pill">Pendente</span>'}</div><p class="small ink2">${jawStreak ? jawStreak + (jawStreak > 1 ? ' dias seguidos' : ' dia') : 'Postura, mordedor e pescoço em 8 minutos'}</p></div>
     <div class="card"><span class="lbl">Fale com o app</span><p class="small ink2">Toque no microfone e diga, por exemplo:</p><ul class="small mute" style="margin:0;padding-left:18px"><li>“Dormi 6 horas e meia e tomei dois copos de água”</li><li>“No almoço comi arroz, feijão e 150 gramas de frango”</li><li>“Monta um treino de 20 minutos sem peso para perna”</li><li>“Quero o treino do Homem-Aranha”</li></ul></div>`;
@@ -198,7 +203,7 @@
       const plan = isC ? ['A', 'B', 'C'] : ['A', 'B', 'A'];
       return back + `<div class="card"><span class="lbl">Programa</span><h2>${esc(p.name)}</h2><p class="small ink2">${esc(p.desc)}</p>
         <div class="field"><label>Semana</label><div class="seg">${[1, 2, 3, 4].map(w => `<button type="button" class="${st.week === w ? 'on' : ''}" data-act="${isC ? 'cal' : 'hal'}-week" data-arg="${w}">${w}</button>`).join('')}</div></div>
-        <div class="list">${plan.map((d, i) => { const ss = isC ? EXDB.calSession(d, st.week) : EXDB.halSession(d, st.week); return `<div class="li click" data-act="${isC ? 'cal' : 'hal'}" data-arg="${d}"><span class="pill" style="min-width:58px;text-align:center">Treino ${i + 1}</span><div class="grow"><div class="t">${esc(days[d].name)}</div><div class="s">${esc(ss.short)}</div></div>${playBtn(isC ? 'cal' : 'hal', d, days[d].name)}</div>`; }).join('')}</div>
+        <div class="list">${plan.map((d, i) => { const ss = isC ? EXDB.calSession(d, st.week) : EXDB.halSession(d, st.week); return `<div class="li click" data-act="${isC ? 'cal' : 'hal'}" data-arg="${d}"><span class="pill" style="min-width:58px;text-align:center">Treino ${i + 1}</span><div class="grow"><div class="t">${esc(days[d].name)}</div><div class="s">${esc(ss.short)}</div><div class="s">${estTxt(ss)}</div></div>${playBtn(isC ? 'cal' : 'hal', d, days[d].name)}</div>`; }).join('')}</div>
         <p class="tiny mute">Faça os treinos em dias alternados. Passe para a semana seguinte quando completar todas as séries com boa técnica.</p>
         ${!isC && !s.eq.includes('halteres') && !s.calis ? '<div class="note">Você não marcou halteres no seu perfil. O app troca os exercícios por versões sem peso até você marcar.</div>' : ''}</div>`;
     }
@@ -208,10 +213,10 @@
     const s = S(), A = EXDB.ARANHA, nx = nextP28();
     const grid = [1, 2, 3, 4].map(w => `<div class="row between"><span class="tiny lbl">Semana ${w} · ${EXDB.W28[w - 1].name}</span></div><div class="days">${[1, 2, 3, 4, 5, 6, 7].map(i => { const d = (w - 1) * 7 + i; const t = EXDB.PATTERN[(d - 1) % 7]; const tt = d === 28 ? 'T' : t; return `<button type="button" class="day ${tt === 'R' ? 'rest' : ''} ${s.p28.done[d] ? 'done' : ''} ${d === nx ? 'next' : ''}" data-act="p28" data-arg="${d}"><span>${d}</span><small>${{ A: 'A', B: 'B', C: 'C', R: 'LEVE', T: 'TESTE' }[tt]}</small></button>`; }).join('')}</div>`).join('');
     const done28 = Object.keys(s.p28.done).length;
-    const c28 = `<div class="card prog-card"><span class="pill tag num">${done28}/28</span><span class="lbl">Programa</span><h2>28 Dias em Casa</h2><p class="small ink2">Só peso do corpo, 20 a 30 minutos, com progressão semana a semana. A pernas e peito, B core e cardio, C costas e postura.</p>${bar(done28, 28)}${nx ? `<div class="li"><div class="grow"><div class="t">Próximo: dia ${nx}</div><div class="s">${esc(EXDB.day28(nx).short)}</div></div>${playBtn('p28', nx, 'dia ' + nx)}</div>` : ''}${grid}</div>`;
+    const c28 = `<div class="card prog-card"><span class="pill tag num">${done28}/28</span><span class="lbl">Programa</span><h2>28 Dias em Casa</h2><p class="small ink2">Só peso do corpo, 20 a 30 minutos, com progressão semana a semana. A pernas e peito, B core e cardio, C costas e postura.</p>${bar(done28, 28)}${nx ? `<div class="li"><div class="grow"><div class="t">Próximo: dia ${nx}</div><div class="s">${esc(EXDB.day28(nx).short)} · ${estTxt(EXDB.day28(nx))}</div></div>${playBtn('p28', nx, 'dia ' + nx)}</div>` : ''}${grid}</div>`;
     const car = `<div class="card"><span class="lbl">Programa</span><h2>${A.name}</h2><p class="small ink2">${esc(A.sub)}</p>
       <div class="field"><label>Nível</label><div class="seg">${[1, 2, 3].map(l => `<button type="button" class="${s.aranha.level === l ? 'on' : ''}" data-act="ar-level" data-arg="${l}">${['', 'Iniciante', 'Intermediário', 'Completo'][l]}</button>`).join('')}</div></div>
-      <div class="list">${A.week.map(([wd, k]) => { const ss = A.sessions[k](s.aranha.level); return `<div class="li ${ss ? 'click' : ''}" ${ss ? `data-act="aranha" data-arg="${k}"` : ''}><span class="pill" style="min-width:48px;text-align:center">${wd}</span><div class="grow"><div class="t">${ss ? esc(ss.name) : 'Descanso'}</div><div class="s">${ss ? esc(ss.short) : 'Recuperação total'}</div></div>${ss ? playBtn('aranha', k, ss.name) : ''}</div>`; }).join('')}</div>
+      <div class="list">${A.week.map(([wd, k]) => { const ss = A.sessions[k](s.aranha.level); return `<div class="li ${ss ? 'click' : ''}" ${ss ? `data-act="aranha" data-arg="${k}"` : ''}><span class="pill" style="min-width:48px;text-align:center">${wd}</span><div class="grow"><div class="t">${ss ? esc(ss.name) : 'Descanso'}</div><div class="s">${ss ? esc(ss.short) + ' · ' + estTxt(ss) : 'Recuperação total'}</div></div>${ss ? playBtn('aranha', k, ss.name) : ''}</div>`; }).join('')}</div>
       <details><summary class="small">O que se sabe do treino dele</summary><div class="stack small ink2" style="margin-top:8px">${A.about.map(p => `<p>${esc(p)}</p>`).join('')}<p class="lbl" style="margin-top:6px">Fontes</p>${A.sources.map(([t, u]) => `<a class="small" href="#" data-act="url" data-arg="${esc(u)}">${esc(t)}</a>`).join('')}</div></details></div>`;
     return which === 'p28' ? c28 : car;
   }
@@ -240,7 +245,7 @@
       else if (b.kind === 'ladder') { head = b.label + ' · 1 até ' + b.top + ' e volta'; items = b.items.map(([id, m]) => [id, m + '× o degrau']); }
       return `<div class="block"><div class="row between" style="border-bottom:1px solid var(--line);padding-bottom:4px"><b class="small">${esc(head)}</b></div>${items.map(([id, r]) => { const ex = EXDB.resolve(id, userEq(), { lim: S().lim }) || EXDB.X[id]; return `<div class="exrow" data-act="ex" data-arg="${ex.id}"><div class="thumb" data-thumb="${ex.anim}"></div><div><div class="t" style="font-weight:650">${esc(ex.n)}</div><div class="tiny mute">${esc(ex.g)}${ex.id !== id ? ' · no lugar de ' + esc(EXDB.X[id].n) : ''}</div></div><span class="small num mute">${esc(r)}</span></div>`; }).join('')}</div>`;
     }).join('');
-    return `<div class="card"><div class="row between" style="align-items:flex-start"><div class="grow"><span class="lbl">${kind === 'gen' ? 'Seu treino' : 'Sessão'}</span><h2>${esc(sess.name)}</h2></div>${playBtn(kind, arg || '', sess.name)}</div>${sess.short ? `<p class="small mute">${esc(sess.short)}</p>` : ''}${sess.note ? `<div class="note">${esc(sess.note)}</div>` : ''}${rows}
+    return `<div class="card"><div class="row between" style="align-items:flex-start"><div class="grow"><span class="lbl">${kind === 'gen' ? 'Seu treino' : 'Sessão'}</span><h2>${esc(sess.name)}</h2><span class="tiny mute num">${(() => { const e = est(sess); return e ? 'Cerca de ' + e.mins + ' min · ~' + e.kcal + ' kcal (' + e.net + ' acima do repouso)' : ''; })()}</span></div>${playBtn(kind, arg || '', sess.name)}</div>${sess.short ? `<p class="small mute">${esc(sess.short)}</p>` : ''}${sess.note ? `<div class="note">${esc(sess.note)}</div>` : ''}${rows}
       <div class="grid2">${kind === 'gen' ? '<button class="btn" type="button" data-act="gen">Gerar outro</button>' : '<span></span>'}<button class="btn pri" type="button" data-act="play" data-kind="${kind}" data-arg="${esc(arg || '')}">Começar guiado</button></div></div>`;
   }
   function tRosto() {
@@ -327,7 +332,7 @@
       const kc = es.reduce((a, e) => a + e.kcal, 0);
       if (m === 'ceia' && !es.length) return '';
       return `<div class="card tight"><div class="row between"><h3>${l}</h3><div class="row"><span class="small mute num">${fmt(kc)} kcal</span><button class="icon-btn" type="button" data-act="food-add" data-arg="${m}" aria-label="Adicionar em ${l}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
-        ${es.length ? `<div class="list">${es.map(e => `<div class="li click" data-act="entry" data-arg="${e.id}"><div class="grow"><div class="t">${esc(e.name)}</div><div class="s num">${e.label ? esc(e.label) + ' · ' : ''}${fmt(e.grams)} g · P ${fmt(e.p, 1)} · C ${fmt(e.c, 1)} · G ${fmt(e.g, 1)}</div></div><span class="kcal">${fmt(e.kcal)}</span></div>`).join('')}</div>` : ''}</div>`;
+        ${es.length ? `<div class="list">${es.map(e => `<div class="li click" data-act="entry" data-arg="${e.id}"><div class="grow"><div class="t">${esc(e.name)}</div><div class="s num">${Food.brandy(Food.get(e.ref)) ? 'média genérica · ' : ''}${e.label ? esc(e.label) + ' · ' : ''}${fmt(e.grams)} g · P ${fmt(e.p, 1)} · C ${fmt(e.c, 1)} · G ${fmt(e.g, 1)}</div></div><span class="kcal">${fmt(e.kcal)}</span></div>`).join('')}</div>` : ''}</div>`;
     }).join('');
     return `<div class="row between"><button class="icon-btn" type="button" data-act="food-day" data-arg="-1" aria-label="Dia anterior"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><h2>${dateLabel(k)}</h2><button class="icon-btn" type="button" data-act="food-day" data-arg="1" aria-label="Próximo dia" ${k >= Store.dkey() ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>
     <div class="card"><div class="row" style="gap:14px">${(() => { const b = Store.budget(k); return ring(t.kcal, b.kcal, 112, fmt(t.kcal), 'de ' + fmt(b.kcal)); })()}<div class="stack" style="flex:1;gap:8px">
@@ -355,7 +360,7 @@
     catch (e) { if (my === fs.seq) { fs.remote = []; fs.err = true; } }
     if (my === fs.seq) { fs.loading = false; renderFS(); }
   }
-  function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · ' + (f.vsrc || 'TACO') : f.src === 'IBGE' ? 'Genérico · IBGE' : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
+  function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · ' + (f.vsrc || 'TACO') : f.src === 'IBGE' ? 'Genérico · IBGE' : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${Food.brandy(f) ? '<span class="pill">Varia por marca</span>' : S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
   function renderFS() {
     const el = $('#fs-res'); if (!el) return;
     const s = S();
@@ -365,11 +370,15 @@
       return;
     }
     const local = Food.search(fs.q, 30);
-    const nat = local.filter(f => f.src === 'TACO' || f.src === 'IBGE'), mine = local.filter(f => f.src !== 'TACO' && f.src !== 'IBGE');
-    el.innerHTML = (nat.length ? `<span class="lbl">Naturais e genéricos (sem marca)</span><div class="list">${nat.slice(0, 14).map(foodRow).join('')}</div>` : '') +
+    const gen = local.filter(f => f.src === 'TACO' || f.src === 'IBGE'), nat = gen.filter(f => !Food.brandy(f)), avg = gen.filter(f => Food.brandy(f)), mine = local.filter(f => f.src !== 'TACO' && f.src !== 'IBGE');
+    // industrializado (açaí, chocolate, miojo...): marca primeiro; a média genérica fica por último, com aviso
+    const brandFirst = avg.length && avg.length >= nat.length;
+    const avgHtml = avg.length ? `<span class="lbl">Média genérica (cada marca é diferente)</span><p class="tiny mute">Para o valor certo, use o código de barras, a foto da tabela ou escolha a marca.</p><div class="list">${avg.slice(0, 6).map(foodRow).join('')}</div>` : '';
+    el.innerHTML = (brandFirst ? `<div class="grid2"><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button></div>` : '') + (nat.length ? `<span class="lbl">Naturais e genéricos (sem marca)</span><div class="list">${nat.slice(0, 14).map(foodRow).join('')}</div>` : '') +
       `<span class="lbl">Marcas</span><div class="list">${mine.map(foodRow).join('')}${fs.remote.map(f => { App._remote = App._remote || {}; App._remote[f.ref] = f; return foodRow(f); }).join('')}</div>` +
       (fs.loading ? '<p class="empty">Buscando marcas na internet…</p>' : (!mine.length && !fs.remote.length ? (fs.err ? '<p class="empty">A busca de marcas (Open Food Facts) não respondeu agora. <a href="#" data-act="fs-retry">Tentar de novo</a>, ou use o código de barras ou a foto da tabela.</p>' : '<p class="empty">Nenhuma marca encontrada com esse nome. Tente o código de barras ou a foto da tabela.</p>') : '')) +
-      (!nat.length && !mine.length && !fs.remote.length && !fs.loading ? `<button class="btn block" type="button" data-act="custom-new" data-arg="${esc(fs.q)}">Criar “${esc(fs.q)}” manualmente</button>` : '');
+      avgHtml +
+      (!gen.length && !mine.length && !fs.remote.length && !fs.loading ? `<button class="btn block" type="button" data-act="custom-new" data-arg="${esc(fs.q)}">Criar “${esc(fs.q)}” manualmente</button>` : '');
   }
   function mealNow() { const h = new Date().getHours() + new Date().getMinutes() / 60; return h < 10.5 ? 'cafe' : h < 15 ? 'almoco' : h < 18.5 ? 'lanche' : h < 22.5 ? 'jantar' : 'ceia'; }
   function portion(ref, meal, existing) {
@@ -387,6 +396,8 @@
       <div class="field"><label for="pt-meal">Refeição</label><select class="input" id="pt-meal">${MEALS.map(([m, l]) => `<option value="${m}" ${(existing ? existing.meal : meal) === m ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="grid2"><button class="btn" type="button" id="pt-fav">${fav ? 'Tirar dos favoritos' : 'Favoritar'}</button><button class="btn pri" type="button" id="pt-ok">${existing ? 'Salvar' : 'Adicionar'}</button></div>
       ${existing ? '<button class="btn danger block" type="button" id="pt-del">Remover</button>' : ''}<p class="tiny mute">Por 100 ${un}: ${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} · C ${fmt(f.c, 1)} · G ${fmt(f.g, 1)}${f.f != null ? ' · fibra ' + fmt(f.f, 1) : ''}${f.na != null ? ' · sódio ' + fmt(f.na) + ' mg' : ''}</p>
+      ${Food.brandy(f) ? `<div class="note warn">Isto é uma média genérica. ${esc(f.name.split(',')[0])} muda muito de uma marca para outra (açúcar, xarope, recheio). Para anotar certo, use o código de barras ou a foto da tabela da embalagem.</div><div class="grid3"><button class="btn sm" type="button" data-act="scan">Código</button><button class="btn sm" type="button" data-act="photo-label">Foto</button><button class="btn sm" type="button" id="pt-brand">Marcas</button></div>` : ''}
+      ${Food.alcohol(f) ? '<p class="tiny mute">Bebida alcoólica: as calorias entram no seu total do dia. Elas vêm do álcool (7 kcal por grama), por isso não aparecem em proteína, carboidrato ou gordura.</p>' : ''}
       ${branded && Food.sanity(f, un, true).length ? `<div class="note warn">Os números deste produto parecem errados: ${esc(Food.sanity(f, un, true)[0])}</div>` : ''}
       ${branded ? `<div class="card tight"><span class="lbl">${f.src === 'Open Food Facts' ? 'Dados da internet podem ter erro' : 'Valores do rótulo'}</span><p class="tiny mute">${f.src === 'Open Food Facts' ? 'Esses números vêm do Open Food Facts, preenchido por voluntários. Confira com a tabela da embalagem.' : 'Se algum número estiver diferente da embalagem, corrija aqui.'}</p><div class="grid2"><button class="btn sm" type="button" id="pt-photo">Conferir com foto</button><button class="btn sm ghost" type="button" id="pt-edit">Editar valores</button></div></div>` : ''}`);
     let unitG = null;
@@ -404,6 +415,7 @@
       Food.touchRecent(f.ref); Store.save(); App.closeSheet(); App.render(); App.toast((existing ? 'Atualizado: ' : 'Adicionado: ') + f.name.split(',')[0]);
     };
     const pre = () => ({ ref: f.ref, name: f.name, brand: f.brand, barcode: f.barcode, unit: f.unit, vals: { kcal: f.kcal, p: f.p, c: f.c, g: f.g, f: f.f, na: f.na }, measures: f.measures, meal: $('#pt-meal').value, fix: true });
+    const pb = $('#pt-brand'); if (pb) pb.onclick = () => foodSearch($('#pt-meal').value, f.name.split(',')[0]);
     const ph = $('#pt-photo'); if (ph) ph.onclick = () => photoLabel(pre());
     const ed = $('#pt-edit'); if (ed) ed.onclick = () => customForm(pre());
     const del = $('#pt-del'); if (del) del.onclick = () => { const day = Store.day(App.foodDate || Store.dkey()); day.meals = day.meals.filter(x => x.id !== existing.id); Store.save(); App.closeSheet(); App.render(); };
@@ -440,7 +452,7 @@
       if (base === 'porcao') { if (!pg) return App.toast('Informe o tamanho da porção'); k = 100 / pg; }
       // conferência dos números (por 100 g): avisa uma vez; tocar de novo salva assim mesmo
       const per = { kcal: g('#cf-k') * k, p: (g('#cf-p') || 0) * k, c: (g('#cf-c') || 0) * k, g: (g('#cf-g') || 0) * k, f: (g('#cf-f') || 0) * k, na: g('#cf-na') != null ? g('#cf-na') * k : null };
-      const sig = JSON.stringify(per), warns = Food.sanity(per, unit);
+      const sig = JSON.stringify(per), warns = Food.sanity(per, unit, false, $('#cf-n').value + ' ' + $('#cf-b').value);
       if (warns.length && App._cfWarned !== sig) {
         App._cfWarned = sig; const box = $('#cf-warn') || Object.assign(document.createElement('div'), { id: 'cf-warn' });
         box.innerHTML = warns.map(w => `<div class="note warn">${esc(w)}</div>`).join('') + '<p class="tiny mute">Se está igual à embalagem, toque em salvar de novo.</p>';
@@ -475,7 +487,7 @@
         const L = { kcal: 'calorias', p: 'proteína', c: 'carboidrato', g: 'gordura', f: 'fibra', na: 'sódio' };
         const warn = r.warn.slice();
         if (diff.length) warn.unshift('A foto mostra valores diferentes dos que estavam salvos em: ' + diff.map(k => L[k] + ' (' + fmt(pre.vals[k], 1) + ' → ' + fmt(r.per100[k], 1) + ')').join(', ') + '.');
-        Food.sanity(vals, r.unit || pre.unit || 'g').forEach(w => warn.push(w));
+        Food.sanity(vals, r.unit || pre.unit || 'g', false, (pre.name || '') + ' ' + (pre.brand || '')).forEach(w => warn.push(w));
         if (missing.length) warn.push('Não li: ' + missing.map(k => L[k]).join(', ') + '. Preencha ou deixe vazio se a tabela não tiver.');
         customForm(Object.assign({}, pre, { vals, missing, portion: r.portion || pre.portion, unit: r.unit || pre.unit, warn, fromPhoto: true }));
       } catch (e) {
@@ -509,6 +521,7 @@
     const R = Bike.R, s = S();
     const mode = R.on ? R.mode : (App.bikeMode || (s.settings.ebike ? 'ebike' : 'bike'));
     return `<div class="hero"><h1>Ar livre</h1></div>
+    ${!R.on && mode === 'ebike' ? `<div class="field"><label>Assistência do motor (muda o gasto)</label><div class="seg">${[['alta', 'Muita'], ['baixa', 'Pouca'], ['sem', 'Desligado']].map(([v, l]) => `<button type="button" class="${(s.settings.ebikeAssist || 'alta') === v ? 'on' : ''}" data-act="ebike-assist" data-arg="${v}">${l}</button>`).join('')}</div></div>` : ''}
     ${R.on ? '' : `<div class="chips">${Object.entries(Bike.MODES).map(([k, l]) => `<button type="button" class="chip ${mode === k ? 'on' : ''}" data-act="bike-mode" data-arg="${k}">${l}</button>`).join('')}</div>`}
     <div class="card"><div class="row between"><span class="lbl">${R.on ? (R.paused ? 'Pausado' : 'Gravando · ' + Bike.MODES[R.mode]) : 'Velocidade atual'}</span>${R.on ? '<span class="pill" id="bk-gps">Procurando GPS…</span>' : ''}</div>
       <div class="speed-wrap"><span class="huge" id="bk-speed">0</span><span class="mute" style="padding-bottom:10px">km/h</span></div>
@@ -568,7 +581,7 @@
       <div class="field"><label>Voz da treinadora</label><div class="list" id="voice-list">${voiceList()}</div><div class="grid2"><div class="field"><label for="v-rate">Velocidade</label><input type="range" id="v-rate" min="0.7" max="1.3" step="0.02" value="${s.settings.vRate || 0.98}"></div><div class="field"><label for="v-pitch">Tom</label><input type="range" id="v-pitch" min="0.8" max="1.4" step="0.02" value="${s.settings.vPitch || 1.06}"></div></div><div class="grid2"><button class="btn sm" type="button" data-act="voice-test">Ouvir</button><button class="btn sm ghost" type="button" data-act="voice-more">Baixar mais vozes</button></div><p class="tiny mute">As vozes vêm do motor de voz do Google no celular. Se aparecerem poucas, toque em “Baixar mais vozes” e instale o pacote de português (Brasil).</p></div>
       <div class="grid2"><div class="field"><label for="cup">Meu copo (ml)</label><input class="input" id="cup" inputmode="numeric" data-set="cupMl" value="${s.settings.cupMl}"></div><div class="field"><label for="bot">Minha garrafa (ml)</label><input class="input" id="bot" inputmode="numeric" data-set="bottleMl" value="${s.settings.bottleMl}"></div></div></div>
     <div class="card"><span class="lbl">Dados</span><p class="tiny mute">Tudo fica salvo só neste celular. Faça um backup de vez em quando.</p><div class="grid2"><button class="btn" type="button" data-act="backup">Exportar backup</button><button class="btn" type="button" data-act="restore">Importar backup</button></div><button class="btn danger block" type="button" data-act="wipe">Apagar tudo</button></div>
-    <div class="card"><span class="lbl">Sobre</span><p class="small"><b>Uncrowned Train</b> · UncrownedLabs<br><span class="mute">por Vinicius Andrade · versão ${esc(UCBridge.appVersion())}</span></p><p class="tiny mute">Alimentos: TACO 4ª ed., NEPA/UNICAMP, 2011. Medidas caseiras: IBGE, POF 2008-2009 (mapeamento do projeto taco-br-mcp). Produtos de marca: Open Food Facts (ODbL). Gasto calórico: Compêndio de Atividades Físicas. Mapas: OpenStreetMap. Este app não substitui orientação de médico, nutricionista ou educador físico.</p></div>`;
+    <div class="card"><span class="lbl">Sobre</span><p class="small"><b>Uncrowned Train</b> · UncrownedLabs<br><span class="mute">por Vinicius Andrade · versão ${esc(UCBridge.appVersion())}</span></p><p class="tiny mute">Alimentos: TACO 4ª ed., NEPA/UNICAMP, 2011. Medidas caseiras: IBGE, POF 2008-2009 (mapeamento do projeto taco-br-mcp). Produtos de marca: Open Food Facts (ODbL). Gasto calórico: 2024 Adult Compendium of Physical Activities (Herrmann et al., J Sport Health Sci 2024), com o MET corrigido pelo gasto basal (Mifflin-St Jeor). Mapas: OpenStreetMap. Este app não substitui orientação de médico, nutricionista ou educador físico.</p></div>`;
   }
   function voiceList() {
     const vs = UCBridge.voices(), cur = S().settings.voiceName;
@@ -644,7 +657,7 @@
     if (a.type === 'water') return box('A', '+ ' + fmt(a.ml) + ' ml de água', a.guessed ? 'Não ouvi a quantidade, usei 1 copo.' : '');
     if (a.type === 'sleep') return box('S', 'Dormiu ' + fmt(a.hours, 2) + ' h', 'Fica registrado em hoje.');
     if (a.type === 'weight') return box('P', 'Peso ' + fmt(a.kg, 1) + ' kg', 'As metas são recalculadas.');
-    if (a.type === 'food') { const tot = a.items.reduce((s, it) => s + Food.calc(Food.get(it.ref), it.grams).kcal, 0); return `<div class="action"><span class="ico">C</span><div style="flex:1"><b>${MEAL_NAME[a.meal]} · ${fmt(tot)} kcal</b>${a.items.map((it, j) => `<div class="row between small" style="margin-top:6px"><span>${esc(it.name.split(',').slice(0, 3).join(','))}<br><span class="mute num">${it.label ? esc(it.label) + ' · ' : ''}${fmt(it.grams)} g${it.check ? ' · confira a quantidade' : ''}</span></span><button class="btn sm ghost" type="button" data-rm="${i}.${j}" aria-label="Remover item">×</button></div>`).join('')}${a.miss.length ? `<div class="small" style="margin-top:6px;color:var(--bad)">Não achei: ${a.miss.map(esc).join(', ')}. Busque depois na aba Comida.</div>` : ''}</div></div>`; }
+    if (a.type === 'food') { const tot = a.items.reduce((s, it) => s + Food.calc(Food.get(it.ref), it.grams).kcal, 0); return `<div class="action"><span class="ico">C</span><div style="flex:1"><b>${MEAL_NAME[a.meal]} · ${fmt(tot)} kcal</b>${a.items.map((it, j) => `<div class="row between small" style="margin-top:6px"><span>${esc(it.name.split(',').slice(0, 3).join(','))}<br><span class="mute num">${it.label ? esc(it.label) + ' · ' : ''}${fmt(it.grams)} g${it.check ? ' · confira a quantidade' : ''}${it.brand ? ' · média genérica, varia por marca' : ''}</span></span><button class="btn sm ghost" type="button" data-rm="${i}.${j}" aria-label="Remover item">×</button></div>`).join('')}${a.miss.length ? `<div class="small" style="margin-top:6px;color:var(--bad)">Não achei: ${a.miss.map(esc).join(', ')}. Busque depois na aba Comida.</div>` : ''}</div></div>`; }
     if (a.type === 'workout') { const o = a.params; return box('T', 'Montar treino de ' + o.minutes + ' min', ({ corpo: 'corpo todo', superior: 'parte de cima', inferior: 'pernas', core: 'abdômen', cardio: 'cardio', pernas_core: 'pernas e abdômen' })[o.focus] + (o.eq ? (o.eq.length ? ' · ' + o.eq.map(x => EXDB.EQ_LABEL[x]).join(', ') : ' · sem peso') : '') + (o.noImpact ? ' · sem salto' : '')); }
     if (a.type === 'program') return box('T', a.id === 'aranha' ? 'Protocolo Aranha' : a.id === 'jaw' ? 'Treino de mandíbula' : '28 Dias em Casa', 'Abrir o treino');
     if (a.type === 'profile') return box('P', 'Atualizar perfil', Object.entries(a.data).map(([k, v]) => ({ age: 'idade', height: 'altura', weight: 'peso', goal: 'objetivo', sex: 'sexo', activity: 'atividade' })[k] + ': ' + esc(v)).join(' · '));
@@ -753,6 +766,7 @@
       case 'my-foods': myFoods(); break;
       case 'mic-ask': voiceOpen(arg); break;
       case 'bike-mode': App.bikeMode = arg; s.settings.ebike = arg === 'ebike'; Store.save(); App.render(); break;
+      case 'ebike-assist': s.settings.ebikeAssist = arg; Store.save(); App.render(); break;
       case 'bike-start': Bike.start(arg); break;
       case 'bike-pause': Bike.pause(); break;
       case 'bike-stop': Bike.stop(); break;

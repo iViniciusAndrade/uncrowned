@@ -117,7 +117,7 @@
     }
     else if (qty != null && qty > 20) grams = qty; // "100 de feijão": ninguém come 100 conchas, são gramas
     else { const u = (/^alface/.test(f.key || '') ? findM('prato raso') : null) || (f.kcal >= 600 ? findM('colher de chá') : null) || (/requeij|geleia|doce, de leite|maionese|catchup|ketchup|mostarda|creme de leite|leite, condensado/.test(f.key || '') ? findM('colher de sopa') : null) || findM('unidade') || findM('fatia') || findM('bife') || findM('filé') || (/^feijao/.test(f.key || '') ? findM('concha') : null) || findM('porção') || findM('copo') || findM('colher de sopa') || meas.slice().sort((a, b) => Math.abs(a.g - 60) - Math.abs(b.g - 60))[0] || null; if (qty != null && u) { grams = u.g * qty; label = qty + ' ' + (u.label === 'unidade' ? (qty > 1 ? 'unidades' : 'unidade') : u.label); } else if (qty != null && qty > 20) grams = qty; else if (u) { grams = u.g * (qty || 1); label = (qty || 1) + ' ' + u.label; } else { grams = 100 * (qty || 1); label = ''; } }
-    return { ref: f.ref, name: f.name, grams: Math.round(grams), label: niceLabel(label), heard: s, unit, check: guessed || (!unit && !findM('unidade')) || grams > 1500 };
+    return { ref: f.ref, name: f.name, grams: Math.round(grams), label: niceLabel(label), heard: s, unit, brand: Food.brandy(f), check: guessed || (!unit && !findM('unidade')) || grams > 1500 };
   }
   // "arroz feijao frango" sem separador vira três itens
   function splitBySyn(part) {

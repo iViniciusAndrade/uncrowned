@@ -87,8 +87,8 @@
   // então o gasto do treino NÃO volta como caloria extra — senão conta duas vezes. Só no perfil sedentário
   // o treino libera o gasto líquido (bruto menos o que o corpo gastaria parado, ~80% do bruto).
   function budget(k) {
-    const g = goals(), out = day(k).kcalOut || 0, sed = S.profile && S.profile.activity === 'sed';
-    const bonus = sed ? Math.round(out * 0.8) : 0;
+    const d = day(k), g = goals(), out = d.kcalOut || 0, sed = S.profile && S.profile.activity === 'sed';
+    const bonus = sed ? Math.round(d.kcalNet != null ? d.kcalNet : out * 0.8) : 0; // líquido: só o que o treino somou acima do repouso
     return { kcal: g.kcal + bonus, bonus, out, counted: sed };
   }
   function totals(k) {

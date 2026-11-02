@@ -8,7 +8,7 @@
   function met(mode, kmh) {
     if (mode === 'caminhada') return kmh < 4 ? 2.8 : kmh < 5.6 ? 3.5 : kmh < 6.4 ? 4.3 : 5;
     if (mode === 'corrida') return kmh < 8 ? 8 : kmh < 9.7 ? 9.8 : kmh < 11.3 ? 11 : 11.8;
-    if (mode === 'ebike') return 4.5;
+    if (mode === 'ebike') { const a = (window.Store && Store.S.settings.ebikeAssist) || 'alta'; return a === 'sem' ? 6.8 : a === 'baixa' ? 6.0 : 4.0; } // 2024: 01088 / 01084 / 01080
     return kmh < 16 ? 4 : kmh < 19.3 ? 6.8 : kmh < 22.5 ? 8 : kmh < 25.7 ? 10 : 12;
   }
   // Filtro anti-tremedeira do GPS: parado na cadeira não pode virar distância, subida nem caloria
@@ -52,7 +52,8 @@
   UCBridge.on('loc', onLoc);
   UCBridge.on('locerr', e => App.toast('GPS: ' + (e && e.text || 'sem sinal')));
   function elapsed() { if (!R.start) return 0; const now = R.paused ? R.pauseAt : Date.now(); return Math.max(0, (now - R.start - R.pausedMs) / 1000); }
-  function kcal() { if (R.dist < 20) return 0; const h = R.moving / 3600; const avg = R.moving ? R.dist / R.moving * 3.6 : 0; return Math.round(met(R.mode, avg) * Store.weightNow() * h); }
+  function kcalBoth() { if (R.dist < 20) return { gross: 0, net: 0 }; const avg = R.moving ? R.dist / R.moving * 3.6 : 0; return Energy.kcal(met(R.mode, avg), R.moving / 60); }
+  function kcal() { return Math.round(kcalBoth().gross); }
   function start(mode) {
     if (R.on) return;
     Object.assign(R, { on: true, paused: false, pts: [], start: Date.now(), pausedMs: 0, dist: 0, moving: 0, max: 0, gain: 0, speed: 0, anchor: null, sm: 0, altS: null, altBase: null, lastAcc: null, mode: mode || R.mode });
@@ -72,9 +73,9 @@
     R.on = false;
     const clear = () => Object.assign(R, { pts: [], start: 0, pausedMs: 0, dist: 0, moving: 0, max: 0, gain: 0, speed: 0, anchor: null, sm: 0, lastAcc: null, paused: false });
     if (R.dist < 50 || secs < 20) { App.toast(R.dist < 50 ? 'Nenhum deslocamento detectado, o percurso não foi salvo' : 'Percurso muito curto, não foi salvo'); clear(); App.render(); return; }
-    const ride = { id: 'r' + Date.now().toString(36), t: R.start, d: Store.dkey(new Date(R.start)), mode: R.mode, secs, moving: Math.round(R.moving), dist: Math.round(R.dist), max: Math.round(R.max * 10) / 10, gain: Math.round(R.gain), kcal: kcal(), pts: simplify(R.pts.map(p => [Math.round(p.lat * 1e6) / 1e6, Math.round(p.lon * 1e6) / 1e6]), 6) };
+    const ride = { id: 'r' + Date.now().toString(36), t: R.start, d: Store.dkey(new Date(R.start)), mode: R.mode, secs, moving: Math.round(R.moving), dist: Math.round(R.dist), max: Math.round(R.max * 10) / 10, gain: Math.round(R.gain), kcal: kcal(), net: Math.round(kcalBoth().net), pts: simplify(R.pts.map(p => [Math.round(p.lat * 1e6) / 1e6, Math.round(p.lon * 1e6) / 1e6]), 6) };
     const S = Store.S; S.rides.unshift(ride);
-    const d = Store.day(ride.d); d.workouts.push({ t: ride.t, d: ride.d, id: 'ride', name: MODES[ride.mode] + ' · ' + (ride.dist / 1000).toFixed(1) + ' km', mins: Math.round(secs / 60), kcal: ride.kcal }); d.kcalOut = (d.kcalOut || 0) + ride.kcal;
+    const d = Store.day(ride.d); d.workouts.push({ t: ride.t, d: ride.d, id: 'ride', name: MODES[ride.mode] + ' · ' + (ride.dist / 1000).toFixed(1) + ' km', mins: Math.round(secs / 60), kcal: ride.kcal }); d.kcalOut = (d.kcalOut || 0) + ride.kcal; d.kcalNet = (d.kcalNet || 0) + ride.net;
     S.history.unshift({ t: ride.t, d: ride.d, id: 'ride', name: MODES[ride.mode], mins: Math.round(secs / 60), kcal: ride.kcal });
     Store.save();
     if (S.settings.voice) UCBridge.speak('Percurso salvo. ' + (ride.dist / 1000).toFixed(1).replace('.', ',') + ' quilômetros.');
