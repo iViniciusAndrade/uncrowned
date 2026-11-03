@@ -92,6 +92,24 @@ final class Reminders {
         for (int n = 1; n <= 9; n++) am.cancel(pi(c, id, n));
     }
 
+    // ---- água do dia: o JS avisa a cada copo; o "Bebi X ml" da notificação também soma aqui ----
+    static String today() { return new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(new java.util.Date()); }
+    static synchronized void setWater(Context c, String day, int ml, int goal) {
+        Bridge.prefs(c).edit().putString("w_day", day).putInt("w_ml", ml).putInt("w_goal", goal).apply();
+    }
+    static synchronized void addWater(Context c, int ml) {
+        android.content.SharedPreferences p = Bridge.prefs(c); String d = today();
+        int cur = d.equals(p.getString("w_day", "")) ? p.getInt("w_ml", 0) : 0;
+        p.edit().putString("w_day", d).putInt("w_ml", cur + ml).apply();
+    }
+    /** ml que ainda faltam hoje; -1 se não sabe (app não abriu hoje e nada foi anotado pela notificação) */
+    static int waterLeft(Context c) {
+        android.content.SharedPreferences p = Bridge.prefs(c);
+        int goal = p.getInt("w_goal", 0); if (goal <= 0) return -1;
+        int ml = today().equals(p.getString("w_day", "")) ? p.getInt("w_ml", 0) : 0;
+        return Math.max(0, goal - ml);
+    }
+
     static synchronized void addPending(Context c, JSONObject o) {
         try {
             JSONArray a = new JSONArray(Bridge.prefs(c).getString(PENDING, "[]"));

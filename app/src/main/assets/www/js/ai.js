@@ -23,9 +23,12 @@
 
   async function ask({ system, content, kind, max }) {
     if (!has()) throw new Error('sem-chave');
-    const body = { model: model(kind || 'texto'), max_tokens: max || 4000, system, messages: [{ role: 'user', content }] };
-    const r = await UCBridge.httpPost(URL, { 'x-api-key': key(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body);
+    // esforço baixo no texto (resposta rápida) e médio na foto (precisa olhar com mais cuidado)
+    const body = { model: model(kind || 'texto'), max_tokens: max || 2500, system, messages: [{ role: 'user', content }], output_config: { effort: kind === 'foto' ? 'medium' : 'low' } };
+    const H = { 'x-api-key': key(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+    let r = await UCBridge.httpPost(URL, H, body);
     let j = null; try { j = JSON.parse(r.body); } catch (e) {}
+    if (r.status === 400 && j && j.error && /output_config|effort/i.test(j.error.message || '')) { delete body.output_config; r = await UCBridge.httpPost(URL, H, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
     if (r.status === 401) throw new Error('Chave da IA inválida. Confira em Perfil > IA.');
     if (r.status === 402 || (j && j.error && /credit|billing|balance/i.test(j.error.message || ''))) throw new Error('Sua conta da API está sem crédito. Coloque crédito em console.anthropic.com.');
     if (r.status === 429) throw new Error('Muitos pedidos seguidos. Espere alguns segundos.');
@@ -41,6 +44,8 @@ Regras:
 - Peso SEMPRE do jeito que foi comido (cozido se a pessoa comeu cozido). Se a pessoa disser que pesou cru, use o peso cru e os valores do alimento cru.
 - Valores por 100 g baseados na TACO (UNICAMP) e na TBCA (USP) para alimentos brasileiros. Para produto de marca use o rótulo brasileiro típico daquela marca. Nunca invente marca.
 - "busca": nome curto para procurar na TACO, no estilo dela (ex.: "arroz tipo 1 cozido", "frango peito sem pele grelhado", "feijao carioca cozido", "ovo galinha inteiro cozido").
+- "busca_en": o mesmo alimento no estilo da USDA FoodData Central, em inglês (ex.: "Rice, white, long-grain, regular, cooked", "Chicken, broiler, breast, meat only, raw", "Egg white, dried"). Para produto de marca, nome do produto em inglês genérico.
+- O app vai buscar os valores oficiais na TACO, na base de marcas e na USDA com "busca"/"busca_en" e comparar com o seu "por100": capriche nesses três campos. Seja rápido e direto: não explique nada.
 - "tipo": natural (in natura ou preparo simples: arroz, feijão, carne, ovo, fruta, legume), preparado (receita caseira ou de restaurante: lasanha, strogonoff, pizza), industrializado (produto de pacote ou marca: biscoito, refrigerante, whey, albumina, chocolate) ou bebida.
 - Se a quantidade não foi dita, use uma porção típica de um adulto e marque confianca "baixa".
 - Água pura não é comida: ignore (o app conta água em outro lugar). Refrigerante zero, café sem açúcar e chá têm ~0 kcal, mas registre.
@@ -48,7 +53,7 @@ Regras:
 - Em foto de prato: identifique cada alimento visível e estime o peso pelo tamanho do prato e da porção; confianca no máximo "media".
 - refeicao: cafe, almoco, lanche, jantar ou ceia, só se a pessoa disser ou estiver óbvio; senão null.
 Responda SÓ com um objeto JSON, sem texto fora dele, neste formato:
-{"refeicao":null,"itens":[{"nome":"Arroz branco cozido","busca":"arroz tipo 1 cozido","tipo":"natural","marca":null,"quantidade":"2 escumadeiras","gramas":170,"unidade":"g","por100":{"kcal":128,"p":2.5,"c":28.1,"g":0.2,"f":1.6,"na":1},"confianca":"alta"}],"duvida":null}
+{"refeicao":null,"itens":[{"nome":"Arroz branco cozido","busca":"arroz tipo 1 cozido","busca_en":"Rice, white, long-grain, regular, cooked","tipo":"natural","marca":null,"quantidade":"2 escumadeiras","gramas":170,"unidade":"g","por100":{"kcal":128,"p":2.5,"c":28.1,"g":0.2,"f":1.6,"na":1},"confianca":"alta"}],"duvida":null}
 "duvida": uma pergunta curta se algo essencial ficou ambíguo (ex.: "O frango era grelhado ou frito?"), senão null.`;
 
   const SYS_LABEL = `Você lê tabelas de informação nutricional de embalagens brasileiras (RDC 429/2020 e modelo antigo).
@@ -77,36 +82,74 @@ Responda SÓ com JSON:
     return ask({ system: SYS_LABEL, content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } }, { type: 'text', text: 'Leia a tabela nutricional desta foto.' }], kind: 'foto', max: 2000 });
   }
 
-  // ---- confere a IA com a base do app ----
+  // ---- USDA FoodData Central (grátis). Chave própria em Perfil > IA; sem ela usa a DEMO_KEY (limite baixo) ----
+  const fdcKey = () => (UCBridge.getSecret('fdc_key') || '').trim() || 'DEMO_KEY';
+  let fdcCache = {}; try { fdcCache = JSON.parse(localStorage.getItem('uc_fdc_cache') || '{}'); } catch (e) {}
+  const saveCache = () => { try { const k = Object.keys(fdcCache); if (k.length > 300) k.slice(0, k.length - 300).forEach(x => delete fdcCache[x]); localStorage.setItem('uc_fdc_cache', JSON.stringify(fdcCache)); } catch (e) {} };
+  const nutr = (f, nums, names) => { const n = (f.foodNutrients || []).find(x => nums.includes(String(x.nutrientNumber)) || names.some(r => r.test(x.nutrientName || ''))); return n ? +n.value : null; };
+  function fdcToPer100(f) {
+    const p = nutr(f, ['203'], [/^Protein$/]), c = nutr(f, ['205'], [/^Carbohydrate, by difference/]), g = nutr(f, ['204'], [/^Total lipid/]);
+    let kcal = nutr(f, ['208'], [/^Energy$/]); if (kcal == null) kcal = nutr(f, ['958', '957'], [/Energy \(Atwater/]);
+    const unitKcal = (f.foodNutrients || []).find(x => String(x.nutrientNumber) === '208' && /kj/i.test(x.unitName || '')); if (unitKcal) kcal = kcal / 4.184;
+    if (kcal == null && p != null) kcal = 4 * (p || 0) + 4 * (c || 0) + 9 * (g || 0);
+    return { kcal: kcal == null ? null : Math.round(kcal * 10) / 10, p, c, g, f: nutr(f, ['291'], [/^Fiber, total dietary/]), na: nutr(f, ['307'], [/^Sodium, Na/]) };
+  }
+  async function fdc(query, branded) {
+    if (!query) return [];
+    const ck = (branded ? 'b:' : 'g:') + query.toLowerCase(); if (fdcCache[ck]) return fdcCache[ck];
+    const body = { query, pageSize: 5, dataType: branded ? ['Branded'] : ['Foundation', 'SR Legacy'] };
+    const call = UCBridge.httpPost('https://api.nal.usda.gov/fdc/v1/foods/search?api_key=' + encodeURIComponent(fdcKey()), {}, body);
+    const r = await Promise.race([call, new Promise(res => setTimeout(() => res(null), 7000))]); // não deixa a USDA travar a resposta
+    if (!r || r.status !== 200) return [];
+    let j = null; try { j = JSON.parse(r.body); } catch (e) { return []; }
+    const out = (j.foods || []).map(f => Object.assign({ id: f.fdcId, name: f.description, brand: f.brandName || f.brandOwner || '', type: f.dataType }, fdcToPer100(f))).filter(x => x.kcal != null);
+    fdcCache[ck] = out; saveCache(); return out;
+  }
+
+  // ---- confere a IA com as tabelas: o valor vem da tabela; a IA só diz o que e quanto ----
   const num = v => (v == null || v === '' || isNaN(+v)) ? null : +v;
-  function resolveItem(it) {
+  const near = (a, b) => a == null || b == null || Math.abs(a - b) <= Math.max(25, b * 0.3);
+  async function resolveItem(it) {
     const p = it.por100 || {}, ai = { kcal: num(p.kcal), p: num(p.p), c: num(p.c), g: num(p.g), f: num(p.f), na: num(p.na) };
     const grams = Math.max(1, Math.round(num(it.gramas) || 100));
     const nat = it.tipo === 'natural' || it.tipo === 'preparado';
-    let food = null, src = 'ia', note = '';
+    let food = null, src = 'ia', note = '', check = '';
+    // 1) TACO / IBGE (Brasil, medido em laboratório) para alimento natural
     if (nat && it.busca) {
-      // prefere a TACO/IBGE se o valor bater com o que a IA esperava (mesmo alimento, mesmo preparo)
       const cands = Food.search(it.busca, 10).filter(f => (f.src === 'TACO' || f.src === 'IBGE') && f.kcal != null && !Food.brandy(f));
-      const ok = cands.find(f => ai.kcal == null || Math.abs(f.kcal - ai.kcal) <= Math.max(25, ai.kcal * 0.3));
+      const ok = cands.find(f => near(f.kcal, ai.kcal));
       if (ok) { food = ok; src = 'tabela'; }
     }
+    // 2) marca: o que a pessoa já cadastrou/escaneou ou a base de marcas do Brasil embutida
     if (!food && it.marca) {
-      // produto que a pessoa já cadastrou/escaneou ou da base de marcas
       const q = (it.busca || it.nome) + ' ' + it.marca;
-      const m = Food.search(q, 8).find(f => f.src !== 'TACO' && f.src !== 'IBGE' && f.brand && Food.norm(f.brand).includes(Food.norm(it.marca).split(' ')[0]));
+      const m = Food.search(q, 12).find(f => f.src !== 'TACO' && f.src !== 'IBGE' && f.brand && Food.norm(f.brand).includes(Food.norm(it.marca).split(' ')[0]) && near(f.kcal, ai.kcal));
       if (m) { food = m; src = 'marca'; }
     }
+    // 3) USDA FoodData Central (Foundation/SR Legacy para natural; Branded para produto)
+    if (!food && (it.busca_en || it.nome)) {
+      let list = [];
+      try { list = await fdc(it.busca_en || it.nome, !nat && !!it.marca); if (!list.length && !nat) list = await fdc(it.busca_en || it.nome, false); } catch (e) {}
+      const best = list.find(x => near(x.kcal, ai.kcal));
+      if (best) {
+        const ref = 'u:' + best.id;
+        food = Store.S.custom[ref] || Food.addCustom({ ref, name: (it.nome || best.name) + ' (USDA)', brand: best.brand || '', kcal: best.kcal, p: best.p || 0, c: best.c || 0, g: best.g || 0, f: best.f, na: best.na, src: 'USDA FoodData Central', cat: 'USDA' });
+        src = 'usda'; check = best.name;
+      }
+    }
+    // 4) sem tabela que confira: estimativa da própria IA
     if (!food) {
-      // vira um alimento "estimativa da IA", reaproveitando se já existir igual
       const name = (it.nome || 'Alimento').trim() + (it.marca ? ' · ' + it.marca : '');
       const ex = Object.values(Store.S.custom).find(f => f.src === 'Estimativa da IA' && Food.norm(f.name) === Food.norm(name) && Math.abs((f.kcal || 0) - (ai.kcal || 0)) < 1);
       food = ex || Food.addCustom({ name, brand: it.marca || '', kcal: ai.kcal || 0, p: ai.p || 0, c: ai.c || 0, g: ai.g || 0, f: ai.f, na: ai.na, src: 'Estimativa da IA', cat: it.tipo === 'industrializado' ? 'Industrializados' : 'IA' });
-      if (it.unidade === 'ml') food.unit = 'ml';
       if (it.tipo === 'industrializado') note = 'varia por marca: escaneie o código para o valor exato';
     }
+    if (it.unidade === 'ml' && !food.unit && food.src !== 'TACO') food.unit = 'ml';
     const warn = Food.sanity(food, food.unit || 'g', true, food.name);
-    return { food, grams, src, note, warn: warn[0] || '', conf: it.confianca || 'media', qty: it.quantidade || '', heard: it.nome };
+    return { food, grams, src, note: note || (check ? 'USDA: ' + check : ''), warn: warn[0] || '', conf: it.confianca || 'media', qty: it.quantidade || '', heard: it.nome };
   }
+  // todos os itens em paralelo (a USDA é a única parte com rede)
+  const resolveAll = itens => Promise.all((itens || []).map(resolveItem));
 
-  window.AI = { has, key, setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), meal, label, resolveItem, extractJSON, MODELS };
+  window.AI = { has, key, setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
 })();

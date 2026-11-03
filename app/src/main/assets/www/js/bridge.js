@@ -46,6 +46,7 @@
     // lembretes nativos
     setReminders(cfg) { if (N && N.setReminders) { try { N.setReminders(JSON.stringify(cfg)); return true; } catch (e) {} } return false; },
     testReminder(title, text) { if (N && N.testReminder) { try { N.testReminder(title, text); return true; } catch (e) {} } return false; },
+    setWater(day, ml, goal) { if (N && N.setWater) { try { N.setWater(String(day), Math.round(ml) | 0, Math.round(goal) | 0); } catch (e) {} } },
     takePending() { if (N && N.takePending) { try { return JSON.parse(N.takePending() || '[]'); } catch (e) {} } return []; },
     permissions() { if (N && N.permissionState) { try { return JSON.parse(N.permissionState()); } catch (e) {} } return { notifications: 'web', exactAlarms: 'web', battery: 'web', mic: 'web', location: 'web' }; },
     requestPermission(kind) { if (N && N.requestPermission) { try { N.requestPermission(kind); return true; } catch (e) {} } return false; },

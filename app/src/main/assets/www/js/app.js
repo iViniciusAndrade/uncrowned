@@ -49,7 +49,10 @@
     const h = App.hist.pop(); if (!h) return false;
     App.tab = h.tab; App.sub.treino = h.sub; App.progOpen = h.prog; App.render(); $('#view').scrollTop = h.y || 0; return true;
   };
+  // conta para o Android quanto de água já foi hoje: ele para os lembretes quando a meta é batida
+  App.syncWater = () => { try { if (S().profile) UCBridge.setWater(Store.dkey(), Store.day().water || 0, Store.goals().water || 0); } catch (e) {} };
   App.render = () => {
+    App.syncWater();
     $$('#tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === App.tab));
     $('#btn-back').hidden = !App.hist.length;
     if (Bike.R.map && App.tab !== 'bike') { try { Bike.R.map.remove(); } catch (e) {} Bike.R.map = null; Bike.R.dot = null; Bike.R.line = null; }
@@ -534,7 +537,7 @@
   }
 
   // ---------- anotar com IA ----------
-  const SRC = { tabela: 'Tabela TACO', marca: 'Sua marca', ia: 'Estimativa da IA' };
+  const SRC = { tabela: 'Tabela TACO', marca: 'Marca', usda: 'USDA', ia: 'Estimativa da IA' };
   App._ai = null;
   function aiSetup() {
     App.sheet(`<h2>Ligar a IA</h2><p class="small ink2">A IA (Claude, da Anthropic) entende o que você comeu por texto, voz ou foto do prato, e lê tabela nutricional como uma pessoa leria.</p>
@@ -576,7 +579,8 @@
     try {
       const r = await AI.meal(input);
       if (!r || !Array.isArray(r.itens) || !r.itens.length) { if (st) st.innerHTML = `<div class="note warn">${r && r.duvida ? esc(r.duvida) : 'Não achei comida nisso. Tente descrever de outro jeito.'}</div>`; if (b) b.disabled = false; return; }
-      App._ai = { input, raw: r, items: r.itens.map(AI.resolveItem), meal: r.refeicao && MEAL_NAME[r.refeicao] ? r.refeicao : mealNow(), duvida: r.duvida };
+      if (st) st.innerHTML = '<p class="empty">Conferindo nas tabelas (TACO, marcas, USDA)…</p>';
+      App._ai = { input, raw: r, items: await AI.resolveAll(r.itens), meal: r.refeicao && MEAL_NAME[r.refeicao] ? r.refeicao : mealNow(), duvida: r.duvida };
       aiReview();
     } catch (e) {
       const m = String(e.message || e);
@@ -599,7 +603,7 @@
       <div class="row"><input class="input" id="ai-fix" placeholder="Corrigir: “era frito”, “foi 100 g de frango”"><button class="btn" type="button" id="ai-fix-go">Corrigir</button></div>
       <div id="ai-st"></div>
       <button class="btn pri block" type="button" id="ai-ok">Adicionar ${A0.items.length > 1 ? A0.items.length + ' itens' : ''}</button>
-      <p class="tiny mute">“Tabela TACO” usa o valor oficial; “Estimativa da IA” é o que a IA calculou. Para produto de marca, o código de barras ou a foto da tabela dá o valor exato.</p>`);
+      <p class="tiny mute">O valor vem da tabela: TACO (Brasil), marca ou USDA (Estados Unidos). “Estimativa da IA” aparece só quando nenhuma tabela conferiu. Para produto de marca, o código de barras ou a foto da tabela dá o valor exato.</p>`);
     $('#ai-meal').onchange = e => A0.meal = e.target.value;
     $$('#sheet-content [data-ai-g]').forEach(inp => inp.oninput = () => {
       const i = +inp.dataset.aiG, g = parseFloat(inp.value.replace(',', '.')) || 0; A0.items[i].grams = g;
@@ -613,7 +617,7 @@
       try {
         const prev = Object.assign({}, A0.raw, { itens: A0.items.map(x => ({ nome: x.food.name, gramas: x.grams, quantidade: x.qty })) });
         const r = await AI.meal({ text: A0.input.text, image: A0.input.image, previous: prev, correction: c });
-        if (r && Array.isArray(r.itens)) { A0.raw = r; A0.items = r.itens.map(AI.resolveItem); A0.duvida = r.duvida; if (r.refeicao && MEAL_NAME[r.refeicao]) A0.meal = r.refeicao; aiReview(); }
+        if (r && Array.isArray(r.itens)) { A0.raw = r; A0.items = await AI.resolveAll(r.itens); A0.duvida = r.duvida; if (r.refeicao && MEAL_NAME[r.refeicao]) A0.meal = r.refeicao; aiReview(); }
       } catch (e) { $('#ai-st').innerHTML = `<div class="note warn">${esc(e.message || e)}</div>`; }
     };
     $('#ai-ok').onclick = () => {
@@ -713,6 +717,7 @@
     <div class="card"><span class="lbl">IA para anotar comida</span>
       <div class="li"><div class="grow"><div class="t">${AI.has() ? 'Ligada' : 'Desligada'}</div><div class="s">${AI.has() ? 'Chave salva neste celular (termina em ' + esc(AI.key().slice(-4)) + ')' : 'Precisa de uma chave da API da Anthropic'}</div></div><button class="btn sm" type="button" data-act="ai-setup">${AI.has() ? 'Trocar' : 'Ligar'}</button></div>
       <div class="field"><label>Modelo</label><div class="seg">${[['auto', 'Automático'], ['barato', 'Econômico'], ['melhor', 'Melhor']].map(([v, l]) => `<button type="button" class="${(s.settings.aiModel || 'auto') === v ? 'on' : ''}" data-act="ai-model" data-arg="${v}">${l}</button>`).join('')}</div><span class="tiny mute">Automático: Sonnet 5.5 para fotos (lê melhor) e Haiku 5.5 para texto. Econômico: Haiku em tudo. Melhor: Sonnet em tudo.</span></div>
+      <div class="field"><label for="fdc-k">Chave grátis da USDA (FoodData Central)</label><div class="row"><input class="input" id="fdc-k" type="password" autocomplete="off" placeholder="${AI.fdcKey() === 'DEMO_KEY' ? 'usando a chave de demonstração' : 'salva (termina em ' + esc(AI.fdcKey().slice(-4)) + ')'}"><button class="btn sm" type="button" data-act="fdc-save">Salvar</button></div><span class="tiny mute">Sem ela, a consulta na USDA usa a chave de demonstração, que tem limite baixo. A grátis sai na hora em fdc.nal.usda.gov/api-key-signup.</span></div>
       ${AI.has() ? '<button class="btn sm ghost" type="button" data-act="ai-off">Desligar e apagar a chave</button>' : ''}</div>
     <div class="card"><span class="lbl">Voz</span>
       <div class="li"><div class="grow"><div class="t">Treinador fala durante o treino</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="voice" ${s.settings.voice ? 'checked' : ''} aria-label="Treinador fala"></div>
@@ -907,6 +912,7 @@
       case 'ai-meal': aiSheet(); break;
       case 'ai-setup': aiSetup(); break;
       case 'ai-model': s.settings.aiModel = arg; Store.save(); App.render(); break;
+      case 'fdc-save': { const k = ($('#fdc-k').value || '').trim(); if (k.length < 20) { App.toast('Cole a chave da USDA'); break; } AI.setFdcKey(k); App.render(); App.toast('Chave da USDA salva'); break; }
       case 'ai-off': AI.setKey(''); App.render(); App.toast('IA desligada'); break;
       case 'photo-label': photoLabel({ meal: fs.meal || mealNow() }); break;
       case 'fs-retry': e.preventDefault(); fs.err = false; online(); break;

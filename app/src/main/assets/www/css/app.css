@@ -186,7 +186,7 @@ body.onb #view{padding-top:calc(var(--top) + 8px);padding-bottom:calc(120px + va
 .ob{min-height:100%;display:flex;flex-direction:column;gap:16px;padding-top:12px}
 .ob .steps{display:flex;gap:4px}.ob .steps i{flex:1;height:3px;border-radius:9px;background:var(--s3)}.ob .steps i.on{background:var(--acc)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-.map{position:relative}.map-off{position:absolute;inset:auto 10px 10px 10px;z-index:500;background:rgba(0,0,0,.8);color:#ddd;font-size:.8rem;padding:8px 10px;border-radius:10px}
+.map{position:relative;isolation:isolate;z-index:0} /* as camadas do Leaflet (z-index 400+) ficam presas dentro do mapa e não vazam por cima das janelas */.map-off{position:absolute;inset:auto 10px 10px 10px;z-index:500;background:rgba(0,0,0,.8);color:#ddd;font-size:.8rem;padding:8px 10px;border-radius:10px}
 .leaflet-container{background:#1a1a1a!important}
 .player .intro{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:8px 0 16px}
 .player .intro>*{flex-shrink:0}

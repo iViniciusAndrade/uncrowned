@@ -178,6 +178,10 @@ public class Bridge {
         });
     }
     @JavascriptInterface public String takePending() { return Reminders.takePending(a); }
+    @JavascriptInterface public void setWater(String day, int ml, int goal) {
+        Reminders.setWater(a, day, ml, goal);
+        if (goal > 0 && ml >= goal) { Reminders.cancelNags(a, 1); ((android.app.NotificationManager) a.getSystemService(Context.NOTIFICATION_SERVICE)).cancel(1); } // tira o aviso que estiver na tela
+    }
 
     @JavascriptInterface public String permissionState() {
         try {

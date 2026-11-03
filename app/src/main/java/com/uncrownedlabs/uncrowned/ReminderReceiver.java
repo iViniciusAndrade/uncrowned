@@ -25,7 +25,7 @@ public class ReminderReceiver extends BroadcastReceiver {
             Reminders.cancelNags(c, id);
             nm.cancel(id);
             int ml = i.getIntExtra("ml", 0);
-            if (ml > 0) { try { Reminders.addPending(c, new JSONObject().put("type", "water").put("ml", ml).put("t", System.currentTimeMillis())); } catch (Exception ignored) { } }
+            if (ml > 0) { Reminders.addWater(c, ml); try { Reminders.addPending(c, new JSONObject().put("type", "water").put("ml", ml).put("t", System.currentTimeMillis())); } catch (Exception ignored) { } }
             return;
         }
         if (act.startsWith("uc.snooze")) {
@@ -42,6 +42,10 @@ public class ReminderReceiver extends BroadcastReceiver {
             long t = Reminders.next(o, System.currentTimeMillis() + 60000L);
             if (t > 0) Reminders.set(c, id, 0, t);
         }
+        // água: meta batida = não avisa mais hoje (nem repete). O próximo horário continua agendado para amanhã.
+        boolean isWater = "water".equals(o.optString("action", ""));
+        int left = isWater ? Reminders.waterLeft(c) : -1;
+        if (isWater && left == 0) { Reminders.cancelNags(c, id); nm.cancel(id); return; }
         boolean intrusive = cfg.optBoolean("intrusive", true) && o.optBoolean("nag", true);
         int nagMax = cfg.optInt("nagMax", 3), nagMin = cfg.optInt("nagMin", 10);
         String title = o.optString("title", "Uncrowned");
@@ -52,6 +56,7 @@ public class ReminderReceiver extends BroadcastReceiver {
             if (v != null && v.length() >= 2) { title = v.optString(0, title); text = v.optString(1, text); }
         }
         if (nag > 0) title = title + " (de novo)";
+        if (isWater && left > 0) text = text + " Faltam " + left + " ml.";
         show(c, id, title, text, o.optString("action", "open"), o.optInt("ml", 250), intrusive, o.optString("icon", ""));
         if (intrusive && nag < nagMax) Reminders.set(c, id, nag + 1, System.currentTimeMillis() + nagMin * 60000L);
     }
