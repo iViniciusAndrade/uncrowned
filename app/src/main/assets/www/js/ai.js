@@ -4,8 +4,13 @@
 (function () {
   const URL = 'https://api.anthropic.com/v1/messages';
   const MODELS = { foto: 'claude-sonnet-5-5', texto: 'claude-haiku-5-5', barato: 'claude-haiku-5-5' };
-  const key = () => (UCBridge.getSecret('anthropic_key') || '').trim();
-  const has = () => /^sk-ant-/.test(key());
+  // dois provedores: Gemini (Google, plano grátis) e Claude (Anthropic, pago). O que tiver chave e estiver escolhido é usado.
+  const GEMINI = { normal: 'gemini-3.8-flash', reserva: ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'] };
+  const akey = () => (UCBridge.getSecret('anthropic_key') || '').trim();
+  const gkey = () => (UCBridge.getSecret('gemini_key') || '').trim();
+  const provider = () => { const p = Store.S.settings.aiProvider; if (p === 'claude' && /^sk-ant-/.test(akey())) return 'claude'; if (gkey().length > 20) return 'gemini'; if (/^sk-ant-/.test(akey())) return 'claude'; return null; };
+  const key = () => provider() === 'gemini' ? gkey() : akey();
+  const has = () => !!provider();
   const model = kind => { const m = (Store.S.settings.aiModel || 'auto'); return m === 'barato' ? MODELS.barato : m === 'melhor' ? MODELS.foto : MODELS[kind]; };
 
   // pega o primeiro objeto JSON da resposta, mesmo se vier com texto em volta ou cercado de ```
@@ -21,8 +26,34 @@
     throw new Error('Resposta da IA incompleta');
   }
 
+  // Gemini: mesma entrada (texto + imagem em base64), resposta já em JSON
+  let gModel = null;
+  async function askGemini({ system, content, kind }) {
+    const parts = content.map(c => c.type === 'image' ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } } : { text: c.text });
+    const body = { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json', thinkingConfig: { thinkingLevel: kind === 'foto' ? 'medium' : 'low' } } };
+    const models = [gModel || GEMINI.normal].concat(GEMINI.reserva.filter(m => m !== (gModel || GEMINI.normal)));
+    let lastErr = null;
+    for (const m of models) {
+      let r = await UCBridge.httpPost('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent', { 'x-goog-api-key': gkey() }, body);
+      let j = null; try { j = JSON.parse(r.body); } catch (e) {}
+      const msg = (j && j.error && j.error.message) || '';
+      if (r.status === 400 && /thinking/i.test(msg)) { delete body.generationConfig.thinkingConfig; r = await UCBridge.httpPost('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent', { 'x-goog-api-key': gkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
+      if (r.status === 404 || (r.status === 400 && /not found|not supported|unknown model/i.test(msg))) { lastErr = new Error('Modelo ' + m + ' indisponível'); continue; } // modelo trocado pelo Google: tenta o próximo
+      if (r.status === 400 && /api key/i.test(msg) || r.status === 401 || r.status === 403) throw new Error('Chave do Gemini inválida. Confira em Perfil > IA.');
+      if (r.status === 429) throw new Error('Limite grátis do Gemini atingido por agora. Espere um minuto (ou até amanhã, se for o limite do dia).');
+      if (r.status >= 500) throw new Error('O Gemini está instável agora. Tente de novo em um minuto.');
+      if (!j || r.status >= 400) throw new Error(msg || 'Erro ' + r.status + ' no Gemini');
+      gModel = m;
+      const cand = (j.candidates || [])[0];
+      if (!cand || !cand.content) throw new Error(cand && cand.finishReason === 'SAFETY' ? 'O Gemini recusou essa foto. Tente outra.' : 'O Gemini não respondeu nada.');
+      return extractJSON((cand.content.parts || []).filter(p => p.text && !p.thought).map(p => p.text).join('\n'));
+    }
+    throw lastErr || new Error('Nenhum modelo do Gemini disponível');
+  }
+
   async function ask({ system, content, kind, max }) {
     if (!has()) throw new Error('sem-chave');
+    if (provider() === 'gemini') return askGemini({ system, content, kind });
     // esforço baixo no texto (resposta rápida) e médio na foto (precisa olhar com mais cuidado)
     const body = { model: model(kind || 'texto'), max_tokens: max || 2500, system, messages: [{ role: 'user', content }], output_config: { effort: kind === 'foto' ? 'medium' : 'low' } };
     const H = { 'x-api-key': key(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
@@ -151,5 +182,5 @@ Responda SÓ com JSON:
   // todos os itens em paralelo (a USDA é a única parte com rede)
   const resolveAll = itens => Promise.all((itens || []).map(resolveItem));
 
-  window.AI = { has, key, setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
+  window.AI = { has, key, provider, setGemini: k => UCBridge.setSecret('gemini_key', (k || '').trim()), setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
 })();

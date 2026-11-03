@@ -539,16 +539,29 @@
   // ---------- anotar com IA ----------
   const SRC = { tabela: 'Tabela TACO', marca: 'Marca', usda: 'USDA', ia: 'Estimativa da IA' };
   App._ai = null;
-  function aiSetup() {
-    App.sheet(`<h2>Ligar a IA</h2><p class="small ink2">A IA (Claude, da Anthropic) entende o que você comeu por texto, voz ou foto do prato, e lê tabela nutricional como uma pessoa leria.</p>
-      <ol class="small ink2" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px"><li>Entre em <b>console.anthropic.com</b> e crie uma conta (é separada do plano do app do Claude).</li><li>Em <b>Billing</b>, coloque um crédito pequeno (US$ 5 duram meses).</li><li>Em <b>API Keys</b>, crie uma chave e cole aqui.</li></ol>
-      <div class="field"><label for="ai-k">Chave da API</label><input class="input" id="ai-k" type="password" autocomplete="off" placeholder="sk-ant-..." value=""></div>
+  function aiSetup(which) {
+    const prov = which || (AI.provider() === 'claude' ? 'claude' : 'gemini');
+    const gem = prov === 'gemini';
+    App.sheet(`<h2>Ligar a IA</h2>
+      <div class="seg"><button type="button" class="${gem ? 'on' : ''}" data-act="ai-setup" data-arg="gemini">Gemini (grátis)</button><button type="button" class="${!gem ? 'on' : ''}" data-act="ai-setup" data-arg="claude">Claude (pago)</button></div>
+      ${gem ? `<p class="small ink2">O Gemini, do Google, tem plano grátis sem cartão. Entende texto, voz e foto do prato e lê tabela nutricional.</p>
+      <ol class="small ink2" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px"><li>Entre em <b>aistudio.google.com</b> com sua conta Google.</li><li>Toque em <b>Get API key</b> e depois <b>Create API key</b>.</li><li>Copie a chave (começa com AIza) e cole aqui.</li></ol>
+      <div class="field"><label for="ai-k">Chave do Gemini</label><input class="input" id="ai-k" type="password" autocomplete="off" placeholder="AIza..."></div>
+      <p class="tiny mute">Grátis com limite por minuto e por dia (sobra para anotar as refeições). No plano grátis o Google pode usar o que você manda para melhorar os modelos dele.</p>
+      <button class="btn ghost block" type="button" data-act="url" data-arg="https://aistudio.google.com/apikey">Abrir o Google AI Studio</button>` : `<p class="small ink2">Claude, da Anthropic. É cobrado à parte da assinatura do app do Claude (no plano Max já vem crédito de API todo mês).</p>
+      <ol class="small ink2" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px"><li>Entre em <b>console.anthropic.com</b> com o mesmo e-mail.</li><li>Confira o crédito em <b>Billing</b>.</li><li>Em <b>API Keys</b>, crie uma chave e cole aqui.</li></ol>
+      <div class="field"><label for="ai-k">Chave da API</label><input class="input" id="ai-k" type="password" autocomplete="off" placeholder="sk-ant-..."></div>
+      <p class="tiny mute">Custo aproximado: foto ~R$ 0,05; frase ~R$ 0,001.</p>
+      <button class="btn ghost block" type="button" data-act="url" data-arg="https://console.anthropic.com/settings/keys">Abrir console.anthropic.com</button>`}
       <button class="btn pri block" type="button" id="ai-save">Salvar e testar</button><div id="ai-st"></div>
-      <p class="tiny mute">Custo aproximado: foto ~R$ 0,05; frase de texto ~R$ 0,001. A chave fica só neste celular e não vai no backup.</p>
-      <button class="btn ghost block" type="button" data-act="url" data-arg="https://console.anthropic.com/settings/keys">Abrir console.anthropic.com</button>`);
+      <p class="tiny mute">A chave fica só neste celular e não vai no backup.</p>`);
     $('#ai-save').onclick = async () => {
-      const k = $('#ai-k').value.trim(); if (!/^sk-ant-/.test(k)) return App.toast('A chave começa com sk-ant-');
-      AI.setKey(k); $('#ai-st').innerHTML = '<p class="empty">Testando…</p>';
+      const k = $('#ai-k').value.trim();
+      if (gem && !/^AIza/.test(k)) return App.toast('A chave do Gemini começa com AIza');
+      if (!gem && !/^sk-ant-/.test(k)) return App.toast('A chave começa com sk-ant-');
+      if (gem) AI.setGemini(k); else AI.setKey(k);
+      S().settings.aiProvider = prov; Store.save();
+      $('#ai-st').innerHTML = '<p class="empty">Testando…</p>';
       try { const r = await AI.meal({ text: 'comi 1 ovo cozido' }); if (!r || !r.itens) throw new Error('resposta estranha'); $('#ai-st').innerHTML = '<div class="note">Funcionando. Já pode anotar com IA.</div>'; App.render(); }
       catch (e) { $('#ai-st').innerHTML = `<div class="note warn">${esc(e.message || e)}</div>`; }
     };
@@ -715,8 +728,8 @@
     <div class="card"><span class="lbl">Aparência</span><p class="tiny mute">Cor de destaque do app. O fundo continua preto.</p>
       <div class="swatches">${THEMES.map(([k, l, c]) => `<button type="button" class="swatch ${(s.settings.theme || 'padrao') === k ? 'on' : ''}" data-act="theme" data-arg="${k}" aria-label="Tema ${l}"><i style="background:${c}"></i>${l}</button>`).join('')}</div></div>
     <div class="card"><span class="lbl">IA para anotar comida</span>
-      <div class="li"><div class="grow"><div class="t">${AI.has() ? 'Ligada' : 'Desligada'}</div><div class="s">${AI.has() ? 'Chave salva neste celular (termina em ' + esc(AI.key().slice(-4)) + ')' : 'Precisa de uma chave da API da Anthropic'}</div></div><button class="btn sm" type="button" data-act="ai-setup">${AI.has() ? 'Trocar' : 'Ligar'}</button></div>
-      <div class="field"><label>Modelo</label><div class="seg">${[['auto', 'Automático'], ['barato', 'Econômico'], ['melhor', 'Melhor']].map(([v, l]) => `<button type="button" class="${(s.settings.aiModel || 'auto') === v ? 'on' : ''}" data-act="ai-model" data-arg="${v}">${l}</button>`).join('')}</div><span class="tiny mute">Automático: Sonnet 5.5 para fotos (lê melhor) e Haiku 5.5 para texto. Econômico: Haiku em tudo. Melhor: Sonnet em tudo.</span></div>
+      <div class="li"><div class="grow"><div class="t">${AI.has() ? 'Ligada · ' + (AI.provider() === 'gemini' ? 'Gemini (grátis)' : 'Claude') : 'Desligada'}</div><div class="s">${AI.has() ? 'Chave salva neste celular (termina em ' + esc(AI.key().slice(-4)) + ')' : 'Gemini é grátis: só precisa de uma conta Google'}</div></div><button class="btn sm" type="button" data-act="ai-setup">${AI.has() ? 'Trocar' : 'Ligar'}</button></div>
+      ${AI.provider() === 'claude' ? '' : '<!--'}<div class="field"><label>Modelo</label><div class="seg">${[['auto', 'Automático'], ['barato', 'Econômico'], ['melhor', 'Melhor']].map(([v, l]) => `<button type="button" class="${(s.settings.aiModel || 'auto') === v ? 'on' : ''}" data-act="ai-model" data-arg="${v}">${l}</button>`).join('')}</div><span class="tiny mute">Automático: Sonnet 5.5 para fotos (lê melhor) e Haiku 5.5 para texto. Econômico: Haiku em tudo. Melhor: Sonnet em tudo.</span></div>${AI.provider() === 'claude' ? '' : '-->'}
       <div class="field"><label for="fdc-k">Chave grátis da USDA (FoodData Central)</label><div class="row"><input class="input" id="fdc-k" type="password" autocomplete="off" placeholder="${AI.fdcKey() === 'DEMO_KEY' ? 'usando a chave de demonstração' : 'salva (termina em ' + esc(AI.fdcKey().slice(-4)) + ')'}"><button class="btn sm" type="button" data-act="fdc-save">Salvar</button></div><span class="tiny mute">Sem ela, a consulta na USDA usa a chave de demonstração, que tem limite baixo. A grátis sai na hora em fdc.nal.usda.gov/api-key-signup.</span></div>
       ${AI.has() ? '<button class="btn sm ghost" type="button" data-act="ai-off">Desligar e apagar a chave</button>' : ''}</div>
     <div class="card"><span class="lbl">Voz</span>
@@ -910,10 +923,10 @@
       }
       case 'scan': scan(); break;
       case 'ai-meal': aiSheet(); break;
-      case 'ai-setup': aiSetup(); break;
+      case 'ai-setup': aiSetup(arg); break;
       case 'ai-model': s.settings.aiModel = arg; Store.save(); App.render(); break;
       case 'fdc-save': { const k = ($('#fdc-k').value || '').trim(); if (k.length < 20) { App.toast('Cole a chave da USDA'); break; } AI.setFdcKey(k); App.render(); App.toast('Chave da USDA salva'); break; }
-      case 'ai-off': AI.setKey(''); App.render(); App.toast('IA desligada'); break;
+      case 'ai-off': AI.setKey(''); AI.setGemini(''); App.render(); App.toast('IA desligada'); break;
       case 'photo-label': photoLabel({ meal: fs.meal || mealNow() }); break;
       case 'fs-retry': e.preventDefault(); fs.err = false; online(); break;
       case 'custom-new': customForm(arg || ''); break;
