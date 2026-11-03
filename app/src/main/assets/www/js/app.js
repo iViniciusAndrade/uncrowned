@@ -345,7 +345,7 @@
       <div class="grid2"><button class="btn sm" type="button" data-act="food-add" data-arg="">Buscar</button><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button><button class="btn sm" type="button" data-act="mic-ask" data-arg="Diga o que comeu. Ex.: no almoço comi arroz, feijão e um bife">Falar</button></div></div>
     ${sections}
     <div class="row wrap"><button class="btn sm ghost" type="button" data-act="custom-new">Criar alimento</button><button class="btn sm ghost" type="button" data-act="my-foods">Meus alimentos e favoritos</button></div>
-    <p class="tiny mute">Valores de alimentos naturais: TACO 4ª ed. (NEPA/UNICAMP). Pratos genéricos sem marca: IBGE, POF 2008-2009. Medidas caseiras: IBGE, POF 2008-2009. Produtos de marca: Open Food Facts e o rótulo informado por você.</p>`;
+    <p class="tiny mute">Valores de alimentos naturais: TACO 4ª ed. (NEPA/UNICAMP). Pratos genéricos sem marca: IBGE, POF 2008-2009. Medidas caseiras: IBGE, POF 2008-2009. Produtos de marca: Open Food Facts (openfoodfacts.org, licença ODbL), embutido no app e atualizado a cada versão, e o rótulo informado por você.</p>`;
   }
   let fs = { meal: '', q: '', remote: [], loading: false, timer: null, seq: 0, err: false };
   function foodSearch(meal, q) {
@@ -358,6 +358,7 @@
     inp.oninput = () => { fs.q = inp.value; fs.remote = []; fs.err = false; fs.seq++; fs.loading = Food.norm(fs.q).length >= 3; renderFS(); clearTimeout(fs.timer); if (fs.loading) fs.timer = setTimeout(online, 650); };
     $('#fs-meal').onchange = e => fs.meal = e.target.value;
     renderFS(); if (Food.norm(fs.q).length >= 3) online();
+    Food.loadBrands(() => renderFS());
   }
   async function online() {
     const my = ++fs.seq, q = fs.q; fs.loading = true; renderFS();
@@ -365,7 +366,7 @@
     catch (e) { if (my === fs.seq) { fs.remote = []; fs.err = true; } }
     if (my === fs.seq) { fs.loading = false; renderFS(); }
   }
-  function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · ' + (f.vsrc || 'TACO') : f.src === 'IBGE' ? 'Genérico · IBGE' : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${Food.brandy(f) ? '<span class="pill">Varia por marca</span>' : S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
+  function foodRow(f) { return `<div class="li click" data-act="pick" data-arg="${esc(f.ref)}"><div class="grow"><div class="t">${esc(f.name)}</div><div class="s">${f.brand ? '<b class="ink2">' + esc(f.brand) + '</b> · ' : ''}${esc(f.src === 'TACO' ? 'Natural · ' + (f.vsrc || 'TACO') : f.src === 'IBGE' ? 'Genérico · ' + (f.vsrc || 'IBGE') : f.src)} · ${fmt(f.kcal)} kcal/100 g · P ${fmt(f.p, 1)} g</div></div>${Food.brandy(f) ? '<span class="pill">Varia por marca</span>' : S().fav.includes(f.ref) ? '<span class="pill">Favorito</span>' : ''}</div>`; }
   function renderFS() {
     const el = $('#fs-res'); if (!el) return;
     const s = S();
@@ -377,11 +378,16 @@
     const local = Food.search(fs.q, 30);
     const gen = local.filter(f => f.src === 'TACO' || f.src === 'IBGE'), nat = gen.filter(f => !Food.brandy(f)), avg = gen.filter(f => Food.brandy(f)), mine = local.filter(f => f.src !== 'TACO' && f.src !== 'IBGE');
     // industrializado (açaí, chocolate, miojo...): marca primeiro; a média genérica fica por último, com aviso
-    const brandFirst = avg.length && avg.length >= nat.length;
+    const typedBrand = Food.brandIn(Food.norm(fs.q)) && mine.length; // digitou a marca ("sassami swift"): marcas no topo
+    const brandFirst = typedBrand || (avg.length && avg.length >= nat.length);
+    const shown = {}; mine.forEach(f => shown[f.ref] = 1);
+    const rem = fs.remote.filter(f => !shown[f.ref]);
     const avgHtml = avg.length ? `<span class="lbl">Média genérica (cada marca é diferente)</span><p class="tiny mute">Para o valor certo, use o código de barras, a foto da tabela ou escolha a marca.</p><div class="list">${avg.slice(0, 6).map(foodRow).join('')}</div>` : '';
-    el.innerHTML = (brandFirst ? `<div class="grid2"><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button></div>` : '') + (nat.length ? `<span class="lbl">Naturais e genéricos (sem marca)</span><div class="list">${nat.slice(0, 14).map(foodRow).join('')}</div>` : '') +
-      `<span class="lbl">Marcas</span><div class="list">${mine.map(foodRow).join('')}${fs.remote.map(f => { App._remote = App._remote || {}; App._remote[f.ref] = f; return foodRow(f); }).join('')}</div>` +
-      (fs.loading ? '<p class="empty">Buscando marcas na internet…</p>' : (!mine.length && !fs.remote.length ? (fs.err ? '<p class="empty">A busca de marcas (Open Food Facts) não respondeu agora. <a href="#" data-act="fs-retry">Tentar de novo</a>, ou use o código de barras ou a foto da tabela.</p>' : '<p class="empty">Nenhuma marca encontrada com esse nome. Tente o código de barras ou a foto da tabela.</p>') : '')) +
+    const natHtml = nat.length ? `<span class="lbl">Naturais e genéricos (sem marca)</span><div class="list">${nat.slice(0, 14).map(foodRow).join('')}</div>` : '';
+    const brandHtml = `<span class="lbl">Marcas</span><div class="list">${mine.slice(0, 20).map(foodRow).join('')}${rem.map(f => { App._remote = App._remote || {}; App._remote[f.ref] = f; return foodRow(f); }).join('')}</div>`;
+    el.innerHTML = (brandFirst && !typedBrand ? `<div class="grid2"><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button></div>` : '') +
+      (typedBrand ? brandHtml + natHtml : natHtml + brandHtml) +
+      (fs.loading && !mine.length ? '<p class="empty">Buscando marcas na internet…</p>' : fs.loading ? '' : (!mine.length && !fs.remote.length ? (fs.err ? '<p class="empty">A busca de marcas (Open Food Facts) não respondeu agora. <a href="#" data-act="fs-retry">Tentar de novo</a>, ou use o código de barras ou a foto da tabela.</p>' : '<p class="empty">Nenhuma marca encontrada com esse nome. Tente o código de barras ou a foto da tabela.</p>') : '')) +
       avgHtml +
       (!gen.length && !mine.length && !fs.remote.length && !fs.loading ? `<button class="btn block" type="button" data-act="custom-new" data-arg="${esc(fs.q)}">Criar “${esc(fs.q)}” manualmente</button>` : '');
   }
@@ -389,12 +395,12 @@
   function portion(ref, meal, existing) {
     let f = Food.get(ref) || (App._remote && App._remote[ref]);
     if (!f) return App.toast('Alimento não encontrado');
-    if (f.remote) f = Food.saveRemote(f);
+    if (f.remote || f.bundled) f = Food.saveRemote(f);
     const meas = Food.measures(f);
     let grams = existing ? existing.grams : (meas.find(m => m.label === 'unidade') || meas[0] || { g: 100 }).g;
     let label = existing ? existing.label : '';
     const fav = S().fav.includes(f.ref), un = f.unit === 'ml' ? 'ml' : 'g', branded = f.src !== 'TACO' && f.src !== 'IBGE';
-    App.sheet(`<span class="lbl">${esc(f.src === 'TACO' ? 'Natural · ' + (f.vsrc || 'TACO') : f.src === 'IBGE' ? 'Genérico sem marca · IBGE POF 2008-2009' : f.src)}${f.brand ? ' · ' + esc(f.brand) : ''}</span><h2>${esc(f.name)}</h2>
+    App.sheet(`<span class="lbl">${esc(f.src === 'TACO' ? 'Natural · ' + (f.vsrc || 'TACO') : f.src === 'IBGE' ? (f.vsrc ? 'Genérico sem marca · ' + f.vsrc : 'Genérico sem marca · IBGE POF 2008-2009') : f.src)}${f.brand ? ' · ' + esc(f.brand) : ''}</span><h2>${esc(f.name)}</h2>
       <div class="chips">${meas.map((m, i) => `<button type="button" class="chip" data-m="${i}">${esc(m.label)} · ${fmt(m.g)} g</button>`).join('')}<button type="button" class="chip" data-g="100">100 ${un}</button></div>
       <div class="grid2"><div class="field"><label for="pt-q">Quantidade</label><input class="input" id="pt-q" inputmode="decimal" value="1"></div><div class="field"><label for="pt-g">${un === 'ml' ? 'Mililitros' : 'Gramas'}</label><input class="input" id="pt-g" inputmode="decimal" value="${fmt(grams, 1).replace('.', '')}"></div></div>
       <div class="card tight"><div class="row between"><span class="big" id="pt-kcal">0</span><span class="mute">kcal</span></div><div class="macros small" id="pt-mac"></div></div>
@@ -833,4 +839,5 @@
   };
 
   App.applyTheme(); App.render(); applyPending(); if (S().profile) syncReminders();
+  setTimeout(() => Food.loadBrands(), 2500); // base de marcas em segundo plano (busca por voz e por nome sem internet)
 })();

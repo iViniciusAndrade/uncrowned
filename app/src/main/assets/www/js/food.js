@@ -8,7 +8,7 @@
 ;
   const HIDDEN = T.filter(f => f.kcal == null && !/^sal\b/.test(f.key)); // sem calorias na tabela (coco verde, iogurte de abacaxi): fora da busca, para não anotar 0 kcal
   HIDDEN.forEach(f => T.splice(T.indexOf(f), 1));
-  (window.GENERICOS || []).forEach(r => T.push({ ref: 'g:' + r[0], id: r[0], name: r[1], cat: 'Genéricos', kcal: r[2], p: r[3], c: r[4], g: r[5], f: r[6], na: r[7], src: 'IBGE', measures: (r[8] || []).map(m => ({ label: m[0], g: m[1] })), key: norm(r[1]) }));
+  (window.GENERICOS || []).forEach(r => T.push({ ref: 'g:' + r[0], id: r[0], name: r[1], cat: 'Genéricos', kcal: r[2], p: r[3], c: r[4], g: r[5], f: r[6], na: r[7], src: 'IBGE', vsrc: r[9] || null, measures: (r[8] || []).map(m => ({ label: m[0], g: m[1] })), key: norm(r[1]) }));
   const BY = {}; T.concat(HIDDEN).forEach(f => BY[f.ref] = f); // registros antigos continuam abrindo
   const MED = window.TACO_MEDIDAS || {};
 
@@ -31,14 +31,44 @@
   SYN.push(['frango frito', 'Frango, filé, à milanesa'], ['frango empanado', 'Frango, filé, à milanesa'], ['frango a milanesa', 'Frango, filé, à milanesa'], ['bife a milanesa', 'Carne, bovina, filé, à milanesa'], ['carne de porco', 'Porco, lombo, assado'], ['porco', 'Porco, lombo, assado'], ['lombo', 'Porco, lombo, assado'], ['pernil', 'Porco, pernil, assado'], ['bisteca', 'Porco, bisteca, grelhada'], ['ovos mexidos', 'Ovo, de galinha, inteiro, frito'], ['ovos fritos', 'Ovo, de galinha, inteiro, frito'], ['ovos cozidos', 'Ovo, de galinha, inteiro, cozido'],
     ['pizza de calabresa', 'Pizza de calabresa'], ['pizza calabresa', 'Pizza de calabresa'], ['pizza de mussarela', 'Pizza de muçarela'], ['pizza mussarela', 'Pizza de muçarela'], ['pizza de muçarela', 'Pizza de muçarela'], ['pizza portuguesa', 'Pizza portuguesa'], ['pizza', 'Pizza (sabor não especificado)'],
     ['cachorro quente', 'Cachorro-quente'], ['hot dog', 'Cachorro-quente'], ['x burguer', 'Hambúrguer (sanduíche)'], ['xburguer', 'Hambúrguer (sanduíche)'], ['lanche', 'Hambúrguer (sanduíche)'], ['sanduiche', 'Hambúrguer (sanduíche)'], ['esfiha', 'Esfirra de carne'], ['esfirra', 'Esfirra de carne'],
-    ['nuggets', 'Nuggets de frango empanados'], ['sassami', 'Filé de frango (sassami)'], ['filezinho', 'Filé de frango (sassami)'], ['macarrao', 'Macarrão cozido'], ['espaguete', 'Macarrão cozido'], ['miojo', 'Macarrão, instantâneo'], ['brigadeiro', 'Brigadeiro'], ['sorvete', 'Sorvete industrializado'], ['acai com granola', 'Açaí com granola'],
+    ['nuggets', 'Nuggets de frango empanados'], ['sassami', 'Sassami (filezinho de frango) cru'], ['filezinho', 'Sassami (filezinho de frango) cru'], ['sassami pronto', 'Sassami (filezinho de frango) grelhado'], ['sassami grelhado', 'Sassami (filezinho de frango) grelhado'], ['macarrao', 'Macarrão cozido'], ['espaguete', 'Macarrão cozido'], ['miojo', 'Macarrão, instantâneo'], ['brigadeiro', 'Brigadeiro'], ['sorvete', 'Sorvete industrializado'], ['acai com granola', 'Açaí com granola'],
     ['strogonoff de carne', 'Estrogonofe de carne'], ['estrogonofe de carne', 'Estrogonofe de carne'], ['strogonoff', 'Estrogonofe de frango'], ['estrogonofe', 'Estrogonofe de frango'], ['macarrao a bolonhesa', 'Macarrão, molho bolognesa'], ['bolonhesa', 'Macarrão, molho bolognesa'], ['empada', 'Empada de frango']);
   const SYNR = [];
   SYN.forEach(([k, name]) => { if (!name) return; const n = norm(name); const f = T.find(x => x.key.startsWith(n)) || T.find(x => x.key.includes(n)); if (f) SYNR.push([norm(k), f.ref]); });
   SYNR.sort((a, b) => b[0].length - a[0].length);
 
-  function all() { const S = Store.S; return T.concat(Object.values(S.custom)); }
-  function get(ref) { return BY[ref] || Store.S.custom[ref] || null; }
+  // Base de marcas do Brasil (Open Food Facts, embutida no APK). É grande: carrega só quando precisa.
+  const B = [], BRAND = new Set(), NATW = new Set();
+  T.forEach(f => f.key.split(/[ ,/]+/).forEach(w => NATW.add(w)));
+  let bState = 0; const bWait = [];
+  const PREP = /\b(empanad[oa]s?|temperad[oa]s?|rechead[oa]s?|frit[oa]s?|com molho|com bacon|com queijo|a milanesa)\b/;
+  const PIECE = /\b(sassami|filezinho|file de peito|file de frango)\b/;
+  function ingest(rows) {
+    rows.forEach(r => {
+      const ref = 'o:' + r[0]; if (BY[ref]) return;
+      const name = r[1], brand = r[2] || '', bk = norm(brand), key = norm(name + ' ' + brand);
+      const measures = r[9] ? [{ label: 'porção do rótulo', g: r[9] }] : [];
+      if (PIECE.test(key) && !/empanad|nugget|steak|hamburg/.test(key)) measures.unshift({ label: 'filezinho (aprox.)', g: 40 });
+      const f = { ref, name, brand, kcal: r[3], p: r[4], c: r[5], g: r[6], f: r[7], na: r[8], src: 'Open Food Facts', barcode: r[0], measures, cat: 'Industrializados', key, bkey: bk, bundled: true };
+      B.push(f); BY[ref] = f;
+      bk.split(' ').forEach(w => { if (w.length >= 3 && !NATW.has(w)) BRAND.add(w); });
+    });
+  }
+  function loadBrands(cb) {
+    if (bState === 2) { if (cb) cb(); return; }
+    if (cb) bWait.push(cb);
+    if (bState === 1) return;
+    bState = 1;
+    const done = () => { try { ingest(window.OFFBR || []); } catch (e) {} window.OFFBR = null; bState = 2; bWait.splice(0).forEach(f => { try { f(); } catch (e) {} }); };
+    if (window.OFFBR && window.OFFBR.length) return done();
+    if (typeof document === 'undefined') return done();
+    const sc = document.createElement('script'); sc.src = 'data/off_br.js'; sc.onload = done; sc.onerror = done; document.head.appendChild(sc);
+  }
+  // a pessoa digitou uma marca? ("sassami swift", "seara")
+  function brandOf(f, bq) { const bk = ' ' + (f.bkey !== undefined ? f.bkey : norm(f.brand || '')) + ' '; return bq.some(t => bk.includes(' ' + t + ' ')); }
+  function brandIn(n) { return n.split(' ').some(t => BRAND.has(t)); }
+  function all(big) { const S = Store.S; return big ? T.concat(B.filter(f => !S.custom[f.ref]), Object.values(S.custom)) : T.concat(Object.values(S.custom)); }
+  function get(ref) { return Store.S.custom[ref] || BY[ref] || null; }
   function search(q, limit) {
     const n = norm(q); if (!n) return [];
     const STOP = { de: 1, do: 1, da: 1, dos: 1, das: 1, e: 1, com: 1, o: 1, a: 1, um: 1, uma: 1, no: 1, na: 1 };
@@ -48,9 +78,10 @@
     // "frito" acha "frita", "ovos" acha "ovo": compara pelo radical
     const stem = t => t.length > 4 ? t.replace(/(oes|aes|ais|eis)$/, 'o').replace(/s$/, '').replace(/[aoe]$/, '') : t.length > 3 ? t.replace(/s$/, '') : t;
     const stoks = toks.map(stem);
+    const bq = toks.filter(t => BRAND.has(t));
     const synAll = SYNR.find(s => s[0] === n);
     const synPre = synAll || SYNR.find(s => s[0].startsWith(n) && n.length >= 3); // ainda digitando ("fra" → frango)
-    all().forEach(f => {
+    all(n.length >= 3).forEach(f => { // a base de marcas só entra a partir de 3 letras (é grande, pesa no celular)
       const key = f.key || norm(f.name);
       let sc = 0;
       for (let j = 0; j < toks.length; j++) { const t = toks[j]; let i = key.indexOf(t); let w = 1; if (i < 0) { i = key.indexOf(stoks[j]); w = 0.8; } if (i < 0) { sc = -1; break; } sc += (i === 0 ? 30 : (key[i - 1] === ' ' || key[i - 1] === ',') ? 18 : 6) * w; if (w === 1 && /^[ ,]?$/.test(key[i + t.length] || '')) sc += 8; } // palavra inteira vale mais (sal ≠ salame)
@@ -58,17 +89,22 @@
       if (synPre && synPre[1] === f.ref) sc += synAll ? 100 : 20;
       if (Store.S.fav.includes(f.ref)) sc += 25;
       if (Store.S.recent.includes(f.ref)) sc += 10;
-      if (f.src === 'TACO' || f.src === 'IBGE') sc += 15; // natural e genérico primeiro
+      if (f.bundled && PREP.test(f.key) && !PREP.test(n)) sc -= 10; // "sassami" sem dizer "empanado": o simples antes
+      if (bq.length && brandOf(f, bq)) sc += 45; // digitou a marca: o produto dela vem primeiro
+      else if (f.src === 'TACO' || f.src === 'IBGE') sc += 15; // natural e genérico primeiro
       sc -= key.length / 12;
       out.push([sc, f]);
     });
     out.sort((a, b) => b[0] - a[0]);
-    const res = out.slice(0, limit || 40).map(x => x[1]);
+    // a base de marcas tem dezenas de milhares de itens: não deixa ela tomar o lugar dos naturais na lista
+    const L = limit || 40, nb = [], bb = [];
+    for (const x of out) { (x[1].bundled ? bb : nb).push(x); if (nb.length >= L && bb.length >= L) break; }
+    const res = nb.slice(0, L).concat(bb.slice(0, L)).sort((a, b) => b[0] - a[0]).slice(0, L > 1 ? L + Math.min(L, 15) : 1).map(x => x[1]);
     // sinônimo só entra na frente quando a pessoa digitou exatamente ele (ex.: "frango" → peito grelhado);
     // em "frango frito" ou "pizza de frango" ele só aparece se não houver nada melhor
     const syn = synAll || (!res.length && synPre);
     if (syn) { const sf = get(syn[1]); if (sf && !res.includes(sf)) res.unshift(sf); }
-    return res.slice(0, limit || 40);
+    return res.slice(0, L > 1 ? L + Math.min(L, 15) : 1);
   }
   // "pães de queijo" → "pão de queijo", "coxinhas" → "coxinha", "pastéis" → "pastel"
   const sing = n => n.split(' ').map(w => w.length < 4 || /^(de|do|da|dos|das|com|tres|mais|menos|gras)$/.test(w) ? w : w === 'paes' ? 'pao' : w.replace(/oes$/, 'ao').replace(/aes$/, 'ao').replace(/eis$/, 'el').replace(/ais$/, 'al').replace(/ns$/, 'm').replace(/([rz])es$/, '$1').replace(/([^s])s$/, '$1')).join(' ');
@@ -85,7 +121,7 @@
       // a pessoa disse mais do que o sinônimo ("frango assado"): se a busca acha algo com todas as palavras, vale mais
       // ...mas só se for o mesmo alimento-base ("frango frito" não pode virar "linguiça de frango")
       const exact = search(n, 1)[0], head = n.split(' ')[0].slice(0, 4);
-      return exact && exact.key.startsWith(head) ? exact : get(ref);
+      return exact && (exact.key.startsWith(head) || (brandIn(n) && exact.bundled)) ? exact : get(ref); // "sassami swift" → o da Swift
     }
     return search(n, 1)[0] || null;
   }
@@ -112,6 +148,8 @@
   // Open Food Facts: valores por 100 g/ml declarados no rótulo
   async function lookupBarcode(code) {
     const local = byBarcode(code); if (local) return { food: local, from: 'local' };
+    await new Promise(r => loadBrands(r));
+    const emb = BY['o:' + code]; if (emb && emb.bundled) return { food: saveRemote(emb), from: 'off' };
     const url = 'https://world.openfoodfacts.org/api/v2/product/' + encodeURIComponent(code) + '.json?fields=product_name,product_name_pt,brands,nutriments,serving_size,serving_quantity,quantity';
     const raw = await UCBridge.httpGet(url);
     const j = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -155,7 +193,7 @@
     if (lastErr) throw lastErr;
     cacheQ[key] = []; return [];
   }
-  function saveRemote(f) { if (Store.S.custom[f.ref]) return Store.S.custom[f.ref]; const o = Object.assign({}, f); delete o.remote; return addCustom(o); }
+  function saveRemote(f) { if (Store.S.custom[f.ref]) return Store.S.custom[f.ref]; const o = Object.assign({}, f); delete o.remote; delete o.bundled; delete o.bkey; delete o.key; return addCustom(o); }
   // corrige (ou cria) um produto com os valores do rótulo. Mantém o mesmo ref/código para o scanner achar depois.
   function fromLabel(o) { return addCustom(Object.assign({ src: 'Rótulo', cat: 'Industrializados' }, o)); }
   // confere se os números por 100 g fazem sentido. Devolve lista de avisos em português.
@@ -184,5 +222,5 @@
     let n = 0; Object.values(Store.S.days).forEach(d => (d.meals || []).forEach((e, i) => { if (e.ref !== f.ref) return; const c = calc(f, e.grams); d.meals[i] = Object.assign({}, e, c, { name: f.name }); n++; }));
     if (n) Store.save(); return n;
   }
-  window.Food = { fromLabel, sanity, recalcEntries, brandy, alcohol, norm, T, get, search, guess, measures, calc, entry, touchRecent, addCustom, lookupBarcode, byBarcode, SYNR, searchOnline, saveRemote };
+  window.Food = { loadBrands, brandIn, fromLabel, sanity, recalcEntries, brandy, alcohol, norm, T, get, search, guess, measures, calc, entry, touchRecent, addCustom, lookupBarcode, byBarcode, SYNR, searchOnline, saveRemote };
 })();

@@ -35,6 +35,31 @@ jobs:
             echo "::warning::Sem o segredo ANDROID_KEYSTORE_B64: APK assinado com chave temporária. Configure os segredos para as atualizações instalarem por cima (ver README)."
           fi
           echo "UC_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Semana (cache da base de marcas)
+        id: wk
+        run: echo "wk=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Cache da base de marcas
+        id: offcache
+        uses: actions/cache@v4
+        with:
+          path: off-cache/off_br.js
+          key: off-br-${{ steps.wk.outputs.wk }}-${{ hashFiles('tools/off_br.py') }}
+      - name: Base de marcas do Brasil (Open Food Facts)
+        continue-on-error: true
+        run: |
+          mkdir -p off-cache
+          if [ ! -s off-cache/off_br.js ]; then
+            curl -fsSL --retry 3 --retry-delay 20 https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz \
+              | gunzip -c | python3 tools/off_br.py off-cache/off_br.js
+          fi
+          n=$(stat -c %s off-cache/off_br.js)
+          if [ "$n" -gt 200000 ]; then
+            cp off-cache/off_br.js app/src/main/assets/www/data/off_br.js
+            echo "::notice::Base de marcas embutida ($n bytes)"
+          else
+            rm -f off-cache/off_br.js
+            echo "::warning::Base de marcas pequena demais ($n bytes); APK sai sem ela"
+          fi
       - name: Compilar APK
         run: gradle :app:assembleRelease --no-daemon --stacktrace
       - name: Renomear
