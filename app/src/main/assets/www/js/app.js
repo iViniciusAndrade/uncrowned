@@ -342,6 +342,7 @@
     return `<div class="row between"><button class="icon-btn" type="button" data-act="food-day" data-arg="-1" aria-label="Dia anterior"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><h2>${dateLabel(k)}</h2><button class="icon-btn" type="button" data-act="food-day" data-arg="1" aria-label="Próximo dia" ${k >= Store.dkey() ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>
     <div class="card"><div class="row" style="gap:14px">${(() => { const b = Store.budget(k); return ring(t.kcal, b.kcal, 112, fmt(t.kcal), 'de ' + fmt(b.kcal)); })()}<div class="stack" style="flex:1;gap:8px">
       ${[['Proteína', t.p, g.prot], ['Carboidrato', t.c, g.carb], ['Gordura', t.g, g.fat], ['Fibra', t.f, g.fiber]].map(([l, v, m]) => `<div><div class="row between tiny"><span>${l}</span><span class="num mute">${fmt(v)} / ${m} g</span></div>${bar(v, m)}</div>`).join('')}</div></div>
+      <button class="btn pri block" type="button" data-act="ai-meal"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>Anotar com IA</button>
       <div class="grid2"><button class="btn sm" type="button" data-act="food-add" data-arg="">Buscar</button><button class="btn sm" type="button" data-act="scan">Código de barras</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button><button class="btn sm" type="button" data-act="mic-ask" data-arg="Diga o que comeu. Ex.: no almoço comi arroz, feijão e um bife">Falar</button></div></div>
     ${sections}
     <div class="row wrap"><button class="btn sm ghost" type="button" data-act="custom-new">Criar alimento</button><button class="btn sm ghost" type="button" data-act="my-foods">Meus alimentos e favoritos</button></div>
@@ -486,6 +487,28 @@
     if (!UCBridge.native) return App.toast('A foto da tabela só funciona no app Android');
     App.sheet(`<h2>Foto da tabela nutricional</h2><p class="small ink2">Enquadre só a tabela, o mais reta possível e com boa luz. Depois você confere os números e diz quanto comeu.</p>
       <div class="grid2"><button class="btn pri" type="button" id="pl-cam">Tirar foto</button><button class="btn" type="button" id="pl-gal">Da galeria</button></div><div id="pl-st"></div>`);
+    const L = { kcal: 'calorias', p: 'proteína', c: 'carboidrato', g: 'gordura', f: 'fibra', na: 'sódio' }, keys = ['kcal', 'p', 'c', 'g', 'f', 'na'];
+    const diffWarn = per => { const diff = pre.vals ? keys.filter(k => per[k] != null && pre.vals[k] != null && Math.abs(per[k] - pre.vals[k]) > Math.max(0.5, Math.abs(pre.vals[k]) * 0.1)) : []; return diff.length ? ['A tabela mostra valores diferentes dos que estavam salvos em: ' + diff.map(k => L[k] + ' (' + fmt(pre.vals[k], 1) + ' → ' + fmt(per[k], 1) + ')').join(', ') + '.'] : []; };
+    // com IA: a foto vai para o Claude, que lê a tabela como uma pessoa leria
+    const goAI = async src => {
+      let img;
+      try { img = await UCBridge.pickImage(src); } catch (e) { const m = String(e.message || e); $('#pl-st').innerHTML = m === 'cancelado' ? '' : `<div class="note warn">${esc(m)}</div>`; return; }
+      $('#pl-st').innerHTML = '<p class="empty">A IA está lendo a tabela…</p>';
+      try {
+        const r = await AI.label(img.b64);
+        if (!r || r.legivel === false || !r.por100) { $('#pl-st').innerHTML = `<div class="note warn">A IA não conseguiu ler a tabela com segurança${r && r.observacao ? ': ' + esc(r.observacao) : ''}. Tente outra foto, mais perto e sem reflexo.</div>`; return; }
+        const per = {}; keys.forEach(k => { const v = r.por100[k]; per[k] = v == null || v === '' ? null : +v; });
+        const vals = Object.assign({}, pre.vals || {}, Object.fromEntries(Object.entries(per).filter(([, v]) => v != null)));
+        const missing = keys.filter(k => per[k] == null && k !== 'f' && k !== 'na');
+        const unit = r.unidade === 'ml' ? 'ml' : 'g';
+        const warn = diffWarn(per).concat(Food.sanity(vals, unit, false, (pre.name || r.nome || '') + ' ' + (pre.brand || r.marca || '')));
+        if (r.observacao) warn.push('IA: ' + r.observacao);
+        customForm(Object.assign({}, pre, { name: pre.name || r.nome || '', brand: pre.brand || r.marca || '', vals, missing, portion: +r.porcao || pre.portion, unit, warn, fromPhoto: true }));
+      } catch (e) {
+        $('#pl-st').innerHTML = `<div class="note warn">${esc(e.message || e)}</div><button class="btn ghost block" type="button" id="pl-ocr">Ler sem IA (no celular)</button>`;
+        $('#pl-ocr').onclick = () => go(src);
+      }
+    };
     const go = async src => {
       $('#pl-st').innerHTML = '<p class="empty">Lendo a tabela…</p>';
       try {
@@ -506,8 +529,107 @@
         $('#pl-st').innerHTML = m === 'cancelado' ? '' : `<div class="note warn">${esc(m)}</div>`;
       }
     };
-    $('#pl-cam').onclick = () => go('camera'); $('#pl-gal').onclick = () => go('gallery');
+    const run = src => AI.has() ? goAI(src) : go(src);
+    $('#pl-cam').onclick = () => run('camera'); $('#pl-gal').onclick = () => run('gallery');
   }
+
+  // ---------- anotar com IA ----------
+  const SRC = { tabela: 'Tabela TACO', marca: 'Sua marca', ia: 'Estimativa da IA' };
+  App._ai = null;
+  function aiSetup() {
+    App.sheet(`<h2>Ligar a IA</h2><p class="small ink2">A IA (Claude, da Anthropic) entende o que você comeu por texto, voz ou foto do prato, e lê tabela nutricional como uma pessoa leria.</p>
+      <ol class="small ink2" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px"><li>Entre em <b>console.anthropic.com</b> e crie uma conta (é separada do plano do app do Claude).</li><li>Em <b>Billing</b>, coloque um crédito pequeno (US$ 5 duram meses).</li><li>Em <b>API Keys</b>, crie uma chave e cole aqui.</li></ol>
+      <div class="field"><label for="ai-k">Chave da API</label><input class="input" id="ai-k" type="password" autocomplete="off" placeholder="sk-ant-..." value=""></div>
+      <button class="btn pri block" type="button" id="ai-save">Salvar e testar</button><div id="ai-st"></div>
+      <p class="tiny mute">Custo aproximado: foto ~R$ 0,05; frase de texto ~R$ 0,001. A chave fica só neste celular e não vai no backup.</p>
+      <button class="btn ghost block" type="button" data-act="url" data-arg="https://console.anthropic.com/settings/keys">Abrir console.anthropic.com</button>`);
+    $('#ai-save').onclick = async () => {
+      const k = $('#ai-k').value.trim(); if (!/^sk-ant-/.test(k)) return App.toast('A chave começa com sk-ant-');
+      AI.setKey(k); $('#ai-st').innerHTML = '<p class="empty">Testando…</p>';
+      try { const r = await AI.meal({ text: 'comi 1 ovo cozido' }); if (!r || !r.itens) throw new Error('resposta estranha'); $('#ai-st').innerHTML = '<div class="note">Funcionando. Já pode anotar com IA.</div>'; App.render(); }
+      catch (e) { $('#ai-st').innerHTML = `<div class="note warn">${esc(e.message || e)}</div>`; }
+    };
+  }
+  function aiSheet(prefill) {
+    if (!AI.has()) return aiSetup();
+    App._ai = { meal: App.foodDate ? null : null };
+    App.sheet(`<h2>Anotar com IA</h2><p class="small mute">Escreva ou fale do jeito que for: “almocei 2 escumadeiras de arroz, 180 g de sassami e brócolis”. Ou mande a foto do prato.</p>
+      <textarea class="input" id="ai-t" rows="3" placeholder="O que você comeu?">${esc(prefill || '')}</textarea>
+      <div class="grid3"><button class="btn sm" type="button" id="ai-mic">Falar</button><button class="btn sm" type="button" id="ai-cam">Foto do prato</button><button class="btn sm" type="button" data-act="photo-label">Foto da tabela</button></div>
+      <div id="ai-img"></div>
+      <button class="btn pri block" type="button" id="ai-go">Entender</button><div id="ai-st"></div>`);
+    let image = null;
+    $('#ai-mic').onclick = () => { App._aiListen = true; $('#ai-mic').textContent = 'Ouvindo…'; if (!UCBridge.listen()) { App._aiListen = false; $('#ai-mic').textContent = 'Falar'; App.toast('Microfone indisponível'); } };
+    $('#ai-cam').onclick = async () => {
+      try { const img = await UCBridge.pickImage('camera'); image = img.b64; $('#ai-img').innerHTML = `<div class="row" style="gap:10px"><img alt="" src="data:image/jpeg;base64,${image}" style="width:72px;height:72px;object-fit:cover;border-radius:12px"><span class="small ink2">Foto pronta. Se quiser, diga o que tem no prato e quanto, ajuda a IA.</span></div>`; }
+      catch (e) { if (String(e.message) !== 'cancelado') App.toast(String(e.message || e)); }
+    };
+    $('#ai-go').onclick = async () => {
+      const text = $('#ai-t').value.trim(); if (!text && !image) return App.toast('Escreva, fale ou mande uma foto');
+      await aiRun({ text, image }, $('#ai-st'));
+    };
+  }
+  async function aiRun(input, statusEl) {
+    const st = statusEl || $('#ai-st');
+    if (st) st.innerHTML = '<p class="empty">A IA está pensando…</p>';
+    const b = $('#ai-go'); if (b) b.disabled = true;
+    try {
+      const r = await AI.meal(input);
+      if (!r || !Array.isArray(r.itens) || !r.itens.length) { if (st) st.innerHTML = `<div class="note warn">${r && r.duvida ? esc(r.duvida) : 'Não achei comida nisso. Tente descrever de outro jeito.'}</div>`; if (b) b.disabled = false; return; }
+      App._ai = { input, raw: r, items: r.itens.map(AI.resolveItem), meal: r.refeicao && MEAL_NAME[r.refeicao] ? r.refeicao : mealNow(), duvida: r.duvida };
+      aiReview();
+    } catch (e) {
+      const m = String(e.message || e);
+      if (m === 'sem-chave') return aiSetup();
+      if (st) st.innerHTML = `<div class="note warn">${esc(m)}</div>`; if (b) b.disabled = false;
+    }
+  }
+  function aiReview() {
+    const A0 = App._ai; if (!A0) return;
+    const row = (x, i) => { const c = Food.calc(x.food, x.grams); const un = x.food.unit === 'ml' ? 'ml' : 'g';
+      return `<div class="ai-it"><div class="row between" style="align-items:flex-start"><div class="grow"><div class="t">${esc(x.food.name)}</div><div class="tiny mute">${esc(x.qty || '')}${x.qty ? ' · ' : ''}<span class="pill">${SRC[x.src]}</span>${x.conf === 'baixa' ? ' <span class="pill">confira a quantidade</span>' : ''}</div></div><button class="btn sm ghost" type="button" data-ai-rm="${i}" aria-label="Remover">×</button></div>
+        <div class="row" style="gap:8px"><input class="input" data-ai-g="${i}" inputmode="decimal" value="${fmt(x.grams, 1).replace('.', '')}" style="width:96px" aria-label="Quantidade em ${un}"><span class="small mute">${un}</span><span class="grow"></span><span class="num small"><b data-ai-k="${i}">${fmt(c.kcal)}</b> kcal · P <span data-ai-p="${i}">${fmt(c.p, 1)}</span></span></div>
+        ${x.note ? `<p class="tiny mute">${esc(x.note)}</p>` : ''}${x.warn ? `<div class="note warn">${esc(x.warn)}</div>` : ''}</div>`; };
+    const tot = () => A0.items.reduce((a, x) => { const c = Food.calc(x.food, x.grams); return { k: a.k + c.kcal, p: a.p + c.p }; }, { k: 0, p: 0 });
+    const t = tot();
+    App.sheet(`<div class="row between"><h2>Confira</h2><select class="input" id="ai-meal" style="width:auto;min-height:40px;padding:6px 10px" aria-label="Refeição">${MEALS.map(([m, l]) => `<option value="${m}" ${A0.meal === m ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      ${A0.duvida ? `<div class="note">${esc(A0.duvida)}</div>` : ''}
+      <div class="stack" id="ai-list">${A0.items.map(row).join('') || '<p class="empty">Nada para anotar.</p>'}</div>
+      <div class="row between"><span class="lbl">Total</span><span class="num"><b id="ai-tk">${fmt(t.k)}</b> kcal · <span id="ai-tp">${fmt(t.p)}</span> g de proteína</span></div>
+      <div class="row"><input class="input" id="ai-fix" placeholder="Corrigir: “era frito”, “foi 100 g de frango”"><button class="btn" type="button" id="ai-fix-go">Corrigir</button></div>
+      <div id="ai-st"></div>
+      <button class="btn pri block" type="button" id="ai-ok">Adicionar ${A0.items.length > 1 ? A0.items.length + ' itens' : ''}</button>
+      <p class="tiny mute">“Tabela TACO” usa o valor oficial; “Estimativa da IA” é o que a IA calculou. Para produto de marca, o código de barras ou a foto da tabela dá o valor exato.</p>`);
+    $('#ai-meal').onchange = e => A0.meal = e.target.value;
+    $$('#sheet-content [data-ai-g]').forEach(inp => inp.oninput = () => {
+      const i = +inp.dataset.aiG, g = parseFloat(inp.value.replace(',', '.')) || 0; A0.items[i].grams = g;
+      const c = Food.calc(A0.items[i].food, g); $(`[data-ai-k="${i}"]`).textContent = fmt(c.kcal); $(`[data-ai-p="${i}"]`).textContent = fmt(c.p, 1);
+      const t2 = tot(); $('#ai-tk').textContent = fmt(t2.k); $('#ai-tp').textContent = fmt(t2.p);
+    });
+    $$('#sheet-content [data-ai-rm]').forEach(b => b.onclick = () => { A0.items.splice(+b.dataset.aiRm, 1); aiReview(); });
+    $('#ai-fix-go').onclick = async () => {
+      const c = $('#ai-fix').value.trim(); if (!c) return;
+      $('#ai-st').innerHTML = '<p class="empty">Corrigindo…</p>';
+      try {
+        const prev = Object.assign({}, A0.raw, { itens: A0.items.map(x => ({ nome: x.food.name, gramas: x.grams, quantidade: x.qty })) });
+        const r = await AI.meal({ text: A0.input.text, image: A0.input.image, previous: prev, correction: c });
+        if (r && Array.isArray(r.itens)) { A0.raw = r; A0.items = r.itens.map(AI.resolveItem); A0.duvida = r.duvida; if (r.refeicao && MEAL_NAME[r.refeicao]) A0.meal = r.refeicao; aiReview(); }
+      } catch (e) { $('#ai-st').innerHTML = `<div class="note warn">${esc(e.message || e)}</div>`; }
+    };
+    $('#ai-ok').onclick = () => {
+      const items = A0.items.filter(x => x.grams > 0); if (!items.length) return App.closeSheet();
+      const day = Store.day(App.foodDate || Store.dkey());
+      items.forEach(x => { day.meals.push(Food.entry(x.food, x.grams, A0.meal, x.qty || '')); Food.touchRecent(x.food.ref); });
+      Store.save(); App._ai = null; App.closeSheet(); App.go('comida');
+      App.toast('Anotado: ' + items.length + (items.length > 1 ? ' itens' : ' item') + ' · ' + fmt(items.reduce((a, x) => a + Food.calc(x.food, x.grams).kcal, 0)) + ' kcal');
+    };
+  }
+  App.aiSheet = aiSheet; App.aiRun = aiRun;
+  UCBridge.on('voice', ev => {
+    if (!App._aiListen) return;
+    if (ev.type === 'final' || ev.type === 'partial') { const t = $('#ai-t'); if (t) t.value = ev.text; }
+    if (ev.type === 'final' || ev.type === 'error' || ev.type === 'end') { App._aiListen = false; const m = $('#ai-mic'); if (m) m.textContent = 'Falar'; }
+  });
   async function scan() {
     try {
       const r = await UCBridge.scanBarcode();
@@ -588,6 +710,10 @@
       <div class="li"><div class="grow"><div class="t">Localização (bike)</div><div class="s">${pst(perm.location)}</div></div><button class="btn sm" type="button" data-act="perm" data-arg="location">Liberar</button></div></div>
     <div class="card"><span class="lbl">Aparência</span><p class="tiny mute">Cor de destaque do app. O fundo continua preto.</p>
       <div class="swatches">${THEMES.map(([k, l, c]) => `<button type="button" class="swatch ${(s.settings.theme || 'padrao') === k ? 'on' : ''}" data-act="theme" data-arg="${k}" aria-label="Tema ${l}"><i style="background:${c}"></i>${l}</button>`).join('')}</div></div>
+    <div class="card"><span class="lbl">IA para anotar comida</span>
+      <div class="li"><div class="grow"><div class="t">${AI.has() ? 'Ligada' : 'Desligada'}</div><div class="s">${AI.has() ? 'Chave salva neste celular (termina em ' + esc(AI.key().slice(-4)) + ')' : 'Precisa de uma chave da API da Anthropic'}</div></div><button class="btn sm" type="button" data-act="ai-setup">${AI.has() ? 'Trocar' : 'Ligar'}</button></div>
+      <div class="field"><label>Modelo</label><div class="seg">${[['auto', 'Automático'], ['barato', 'Econômico'], ['melhor', 'Melhor']].map(([v, l]) => `<button type="button" class="${(s.settings.aiModel || 'auto') === v ? 'on' : ''}" data-act="ai-model" data-arg="${v}">${l}</button>`).join('')}</div><span class="tiny mute">Automático: Sonnet 5.5 para fotos (lê melhor) e Haiku 5.5 para texto. Econômico: Haiku em tudo. Melhor: Sonnet em tudo.</span></div>
+      ${AI.has() ? '<button class="btn sm ghost" type="button" data-act="ai-off">Desligar e apagar a chave</button>' : ''}</div>
     <div class="card"><span class="lbl">Voz</span>
       <div class="li"><div class="grow"><div class="t">Treinador fala durante o treino</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="voice" ${s.settings.voice ? 'checked' : ''} aria-label="Treinador fala"></div>
       <div class="li"><div class="grow"><div class="t">Mãos livres no treino</div><div class="s">Fica ouvindo “pausa”, “próximo”, “feito”, “volta”</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="handsFree" ${s.settings.handsFree ? 'checked' : ''} aria-label="Mãos livres"></div>
@@ -685,6 +811,11 @@
     const acts = Voice.parse(text, { cupMl: S().settings.cupMl, bottleMl: S().settings.bottleMl });
     if (acts.length === 1 && acts[0].type === 'control' && Player.isOpen()) { Player.command(acts[0].cmd); voiceClose(); return; }
     if (acts.length === 1 && ['nav', 'program', 'workout', 'bike', 'control'].includes(acts[0].type)) { V.actions = acts; confirmActions(); return; }
+    // com a IA ligada, a parte de comida vai para ela (entende muito mais jeitos de falar); água, sono e peso continuam aqui
+    if (AI.has() && acts.some(a => a.type === 'food' || a.type === 'unknown') && !acts.some(a => ['nav', 'program', 'workout', 'bike', 'control', 'profile'].includes(a.type))) {
+      V.actions = acts.filter(a => ['water', 'sleep', 'weight', 'jawdone'].includes(a.type)); if (V.actions.length) confirmActions(); else voiceClose();
+      aiSheet(text); aiRun({ text }); return;
+    }
     V.actions = acts; renderVoice();
   }
   function confirmActions() {
@@ -773,6 +904,10 @@
         portion(en.ref, en.meal, en); break;
       }
       case 'scan': scan(); break;
+      case 'ai-meal': aiSheet(); break;
+      case 'ai-setup': aiSetup(); break;
+      case 'ai-model': s.settings.aiModel = arg; Store.save(); App.render(); break;
+      case 'ai-off': AI.setKey(''); App.render(); App.toast('IA desligada'); break;
       case 'photo-label': photoLabel({ meal: fs.meal || mealNow() }); break;
       case 'fs-retry': e.preventDefault(); fs.err = false; online(); break;
       case 'custom-new': customForm(arg || ''); break;

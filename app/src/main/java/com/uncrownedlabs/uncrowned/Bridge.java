@@ -230,7 +230,42 @@ public class Bridge {
 
     // ---------- foto da tabela nutricional ----------
     @JavascriptInterface public void readLabel(String id, String source) {
-        ui.post(() -> LabelReader.start(a, id, source));
+        ui.post(() -> LabelReader.start(a, id, source, false));
+    }
+    // foto para a IA: devolve {b64, w, h} em JPEG reduzido
+    @JavascriptInterface public void pickImage(String id, String source) {
+        ui.post(() -> LabelReader.start(a, id, source, true));
+    }
+
+    // ---------- segredos (chave da IA): ficam só no aparelho, fora do backup e do state.json ----------
+    @JavascriptInterface public void setSecret(String k, String v) { a.getSharedPreferences("uc_secret", Context.MODE_PRIVATE).edit().putString(k, v).apply(); }
+    @JavascriptInterface public String getSecret(String k) { return a.getSharedPreferences("uc_secret", Context.MODE_PRIVATE).getString(k, ""); }
+
+    // ---------- POST (API da IA) ----------
+    @JavascriptInterface public void httpPost(String id, String url, String headersJson, String body) {
+        new Thread(() -> {
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) new URL(url).openConnection();
+                c.setRequestMethod("POST");
+                c.setDoOutput(true);
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(120000);
+                c.setRequestProperty("content-type", "application/json");
+                JSONObject h = new JSONObject(headersJson == null || headersJson.isEmpty() ? "{}" : headersJson);
+                java.util.Iterator<String> it = h.keys();
+                while (it.hasNext()) { String k = it.next(); c.setRequestProperty(k, h.getString(k)); }
+                byte[] out = body.getBytes(StandardCharsets.UTF_8);
+                c.setFixedLengthStreamingMode(out.length);
+                try (java.io.OutputStream os = c.getOutputStream()) { os.write(out); }
+                int code = c.getResponseCode();
+                InputStream in = code < 400 ? c.getInputStream() : c.getErrorStream();
+                String resp = in == null ? "" : read(in);
+                a.resolve(id, new JSONObject().put("status", code).put("body", resp).toString());
+            } catch (Exception e) {
+                a.resolve(id, json("error", "Sem conexão com a IA"));
+            } finally { if (c != null) c.disconnect(); }
+        }).start();
     }
 
     // ---------- rede ----------

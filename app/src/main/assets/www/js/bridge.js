@@ -52,6 +52,13 @@
 
     scanBarcode() { return call('scanBarcode'); },
     readLabel(source) { return call('readLabel', source || 'camera'); },
+    pickImage(source) { return call('pickImage', source || 'camera'); },
+    httpPost(url, headers, body) {
+      if (N && N.httpPost) return call('httpPost', url, JSON.stringify(headers || {}), typeof body === 'string' ? body : JSON.stringify(body));
+      return fetch(url, { method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, headers || {}), body: typeof body === 'string' ? body : JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.text() }));
+    },
+    setSecret(k, v) { if (N && N.setSecret) { try { N.setSecret(k, v); return; } catch (e) {} } try { localStorage.setItem('uc_secret_' + k, v); } catch (e) {} },
+    getSecret(k) { if (N && N.getSecret) { try { return N.getSecret(k) || ''; } catch (e) {} } try { return localStorage.getItem('uc_secret_' + k) || ''; } catch (e) { return ''; } },
     httpGet(url) {
       if (N && N.httpGet) return call('httpGet', url);
       return fetch(url).then(r => r.text());

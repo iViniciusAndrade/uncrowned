@@ -28,9 +28,10 @@ import java.io.InputStream;
 final class LabelReader {
     static final int REQ_CAMERA = 31, REQ_GALLERY = 32;
     static String pendingId;
+    static boolean wantImage; // true: devolve a foto em base64 para a IA; false: lê o texto com o ML Kit
 
-    static void start(MainActivity a, String id, String source) {
-        pendingId = id;
+    static void start(MainActivity a, String id, String source, boolean image) {
+        pendingId = id; wantImage = image;
         try {
             Intent i;
             if ("gallery".equals(source)) {
@@ -65,6 +66,16 @@ final class LabelReader {
                 // alguns apps de câmera ignoram o arquivo pedido e devolvem só a miniatura
                 if (bmp == null && data != null && data.getExtras() != null && data.getExtras().get("data") instanceof Bitmap) bmp = (Bitmap) data.getExtras().get("data");
                 if (bmp == null) { fail(a, "Não deu para abrir a foto"); return; }
+                if (wantImage) {
+                    // a IA lê bem até ~1568 px no lado maior; mais que isso só gasta
+                    int mx = Math.max(bmp.getWidth(), bmp.getHeight());
+                    if (mx > 1568) { float k = 1568f / mx; bmp = Bitmap.createScaledBitmap(bmp, Math.round(bmp.getWidth() * k), Math.round(bmp.getHeight() * k), true); }
+                    java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 85, bo);
+                    String b64 = android.util.Base64.encodeToString(bo.toByteArray(), android.util.Base64.NO_WRAP);
+                    ok(a, new JSONObject().put("b64", b64).put("w", bmp.getWidth()).put("h", bmp.getHeight()).toString());
+                    return;
+                }
                 TextRecognizer rec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
                 final int w = bmp.getWidth(), h = bmp.getHeight();
                 rec.process(InputImage.fromBitmap(bmp, 0))
