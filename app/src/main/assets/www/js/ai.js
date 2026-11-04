@@ -13,6 +13,9 @@
   const provider = () => { const p = Store.S.settings.aiProvider; if (p && HAS[p] && HAS[p]()) return p; return ['gemini', 'qwen', 'claude'].find(x => HAS[x]()) || null; };
   const key = () => ({ gemini: gkey, qwen: qkey, claude: akey })[provider()]();
   const has = () => !!provider();
+  // conferir no FatSecret: a IA pesquisa na web (só no FatSecret) antes de responder. Padrão: ligado.
+  const fsOn = () => Store.S.settings.aiFatsecret !== false;
+  const FS_RE = /fatsecret\./i;
   const model = kind => { const m = (Store.S.settings.aiModel || 'auto'); return m === 'barato' ? MODELS.barato : m === 'melhor' ? MODELS.foto : MODELS[kind]; };
 
   // pega o primeiro objeto JSON da resposta, mesmo se vier com texto em volta ou cercado de ```
@@ -30,9 +33,10 @@
 
   // Gemini: mesma entrada (texto + imagem em base64), resposta já em JSON
   let gModel = null;
-  async function askGemini({ system, content, kind }) {
+  async function askGemini({ system, content, kind, web }) {
     const parts = content.map(c => c.type === 'image' ? { inline_data: { mime_type: c.source.media_type, data: c.source.data } } : { text: c.text });
     const body = { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json', thinkingConfig: { thinkingLevel: kind === 'foto' ? 'medium' : 'low' } } };
+    if (web) body.tools = [{ google_search: {} }];
     const models = [gModel || GEMINI.normal].concat(GEMINI.reserva.filter(m => m !== (gModel || GEMINI.normal)));
     let lastErr = null;
     for (const m of models) {
@@ -40,6 +44,8 @@
       let j = null; try { j = JSON.parse(r.body); } catch (e) {}
       const msg = (j && j.error && j.error.message) || '';
       if (r.status === 400 && /thinking/i.test(msg)) { delete body.generationConfig.thinkingConfig; r = await UCBridge.httpPost('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent', { 'x-goog-api-key': gkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
+      // modelo antigo que não junta busca com resposta em JSON: pede sem o modo JSON (o app extrai o JSON do texto)
+      if (r.status === 400 && body.tools && /tool|search|mime|json/i.test(msg) && !/api key/i.test(msg)) { delete body.generationConfig.responseMimeType; r = await UCBridge.httpPost('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent', { 'x-goog-api-key': gkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} if (r.status === 400) { delete body.tools; r = await UCBridge.httpPost('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent', { 'x-goog-api-key': gkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} } }
       if (r.status === 404 || (r.status === 400 && /not found|not supported|unknown model/i.test(msg))) { lastErr = new Error('Modelo ' + m + ' indisponível'); continue; } // modelo trocado pelo Google: tenta o próximo
       if (r.status === 400 && /api key/i.test(msg) || r.status === 401 || r.status === 403) throw new Error('Chave do Gemini inválida. Confira em Perfil > IA.');
       if (r.status === 429) throw new Error('Limite grátis do Gemini atingido por agora. Espere um minuto (ou até amanhã, se for o limite do dia).');
@@ -48,7 +54,10 @@
       gModel = m;
       const cand = (j.candidates || [])[0];
       if (!cand || !cand.content) throw new Error(cand && cand.finishReason === 'SAFETY' ? 'O Gemini recusou essa foto. Tente outra.' : 'O Gemini não respondeu nada.');
-      return extractJSON((cand.content.parts || []).filter(p => p.text && !p.thought).map(p => p.text).join('\n'));
+      const out = extractJSON((cand.content.parts || []).filter(p => p.text && !p.thought).map(p => p.text).join('\n'));
+      const gm = cand.groundingMetadata || {};
+      out._web = (gm.groundingChunks || []).map(c => c.web ? (c.web.title || '') + ' ' + (c.web.uri || '') : '').filter(Boolean);
+      return out;
     }
     throw lastErr || new Error('Nenhum modelo do Gemini disponível');
   }
@@ -58,16 +67,17 @@
   const QWEN = ['qwen3.7-plus', 'qwen3.6-plus', 'qwen3.5-plus', 'qwen-plus'];
   const QURL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions';
   let qModel = null;
-  async function askQwen({ system, content, kind }) {
+  async function askQwen({ system, content, kind, web }) {
     const parts = content.map(c => c.type === 'image' ? { type: 'image_url', image_url: { url: 'data:' + c.source.media_type + ';base64,' + c.source.data } } : { type: 'text', text: c.text });
     const models = [qModel || QWEN[0]].concat(QWEN.filter(m => m !== (qModel || QWEN[0])));
     let lastErr = null;
     for (const m of models) {
       const body = { model: m, messages: [{ role: 'system', content: system }, { role: 'user', content: parts }], temperature: 0.2, response_format: { type: 'json_object' }, enable_thinking: false };
+      if (web) { body.enable_search = true; body.search_options = { forced_search: true, enable_source: true, search_strategy: 'turbo' }; }
       let r = await UCBridge.httpPost(QURL, { Authorization: 'Bearer ' + qkey() }, body);
       let j = null; try { j = JSON.parse(r.body); } catch (e) {}
       const err = (j && j.error) || {}, msg = err.message || (j && j.message) || '', code = err.code || (j && j.code) || '';
-      if (r.status === 400 && /enable_thinking|response_format/i.test(msg)) { delete body.enable_thinking; if (/response_format/i.test(msg)) delete body.response_format; r = await UCBridge.httpPost(QURL, { Authorization: 'Bearer ' + qkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
+      if (r.status === 400 && /enable_thinking|response_format|search/i.test(msg)) { delete body.enable_thinking; if (/response_format/i.test(msg)) delete body.response_format; if (/search/i.test(msg)) { delete body.enable_search; delete body.search_options; } r = await UCBridge.httpPost(QURL, { Authorization: 'Bearer ' + qkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
       if (r.status === 404 || /model_not_found|ModelNotFound|does not exist|not support image|InvalidParameter.*model/i.test(code + ' ' + msg)) { lastErr = new Error('Modelo ' + m + ' indisponível'); continue; }
       if (r.status === 401 || /InvalidApiKey|invalid api.?key/i.test(code + msg)) throw new Error('Chave do Qwen inválida. Confira em Perfil > IA (precisa ser da região internacional, Singapura).');
       if (/FreeTierOnly|AllocationQuota|quota/i.test(code + ' ' + msg)) throw new Error('A cota grátis do Qwen acabou. Ative outro provedor (Gemini é grátis) ou coloque crédito no Alibaba Cloud.');
@@ -76,20 +86,25 @@
       if (!j || r.status >= 400) throw new Error(msg || 'Erro ' + r.status + ' no Qwen');
       qModel = m;
       const t = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-      return extractJSON(Array.isArray(t) ? t.map(x => x.text || '').join('') : t);
+      const out = extractJSON(Array.isArray(t) ? t.map(x => x.text || '').join('') : t);
+      const si = j.search_info || (j.output && j.output.search_info) || {};
+      out._web = (si.search_results || []).map(x => (x.site_name || x.title || '') + ' ' + (x.url || ''));
+      return out;
     }
     throw lastErr || new Error('Nenhum modelo do Qwen disponível');
   }
 
-  async function ask({ system, content, kind, max }) {
+  async function ask({ system, content, kind, max, web }) {
     if (!has()) throw new Error('sem-chave');
-    if (provider() === 'gemini') return askGemini({ system, content, kind });
-    if (provider() === 'qwen') return askQwen({ system, content, kind });
+    if (provider() === 'gemini') return askGemini({ system, content, kind, web });
+    if (provider() === 'qwen') return askQwen({ system, content, kind, web });
     // esforço baixo no texto (resposta rápida) e médio na foto (precisa olhar com mais cuidado)
     const body = { model: model(kind || 'texto'), max_tokens: max || 2500, system, messages: [{ role: 'user', content }], output_config: { effort: kind === 'foto' ? 'medium' : 'low' } };
+    if (web) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4, allowed_domains: ['fatsecret.com.br', 'fatsecret.com'] }];
     const H = { 'x-api-key': key(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
     let r = await UCBridge.httpPost(URL, H, body);
     let j = null; try { j = JSON.parse(r.body); } catch (e) {}
+    if (r.status === 400 && j && j.error && /web_search|tool/i.test(j.error.message || '')) { delete body.tools; r = await UCBridge.httpPost(URL, H, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
     if (r.status === 400 && j && j.error && /output_config|effort/i.test(j.error.message || '')) { delete body.output_config; r = await UCBridge.httpPost(URL, H, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
     if (r.status === 401) throw new Error('Chave da IA inválida. Confira em Perfil > IA.');
     if (r.status === 402 || (j && j.error && /credit|billing|balance/i.test(j.error.message || ''))) throw new Error('Sua conta da API está sem crédito. Coloque crédito em console.anthropic.com.');
@@ -97,7 +112,9 @@
     if (r.status >= 500 || r.status === 529) throw new Error('A IA está sobrecarregada agora. Tente de novo em um minuto.');
     if (!j || r.status >= 400) throw new Error((j && j.error && j.error.message) || 'Erro ' + r.status + ' na IA');
     const text = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-    return extractJSON(text);
+    const out = extractJSON(text);
+    out._web = []; (j.content || []).forEach(b => { if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) b.content.forEach(x => out._web.push((x.title || '') + ' ' + (x.url || ''))); });
+    return out;
   }
 
   const SYS_MEAL = `Você é o nutricionista do app Uncrowned Train, no Brasil. Sua função é transformar o que a pessoa comeu em itens com peso em gramas e valores nutricionais por 100 g.
@@ -115,8 +132,15 @@ Regras:
 - Em foto de prato: identifique cada alimento visível e estime o peso pelo tamanho do prato e da porção; confianca no máximo "media".
 - refeicao: cafe, almoco, lanche, jantar ou ceia, só se a pessoa disser ou estiver óbvio; senão null.
 Responda SÓ com um objeto JSON, sem texto fora dele, neste formato:
-{"refeicao":null,"itens":[{"nome":"Arroz branco cozido","busca":"arroz tipo 1 cozido","busca_en":"Rice, white, long-grain, regular, cooked","tipo":"natural","marca":null,"quantidade":"2 escumadeiras","gramas":170,"unidade":"g","por100":{"kcal":128,"p":2.5,"c":28.1,"g":0.2,"f":1.6,"na":1},"confianca":"alta"}],"duvida":null}
+{"refeicao":null,"itens":[{"nome":"Arroz branco cozido","fatsecret":null,"busca":"arroz tipo 1 cozido","busca_en":"Rice, white, long-grain, regular, cooked","tipo":"natural","marca":null,"quantidade":"2 escumadeiras","gramas":170,"unidade":"g","por100":{"kcal":128,"p":2.5,"c":28.1,"g":0.2,"f":1.6,"na":1},"confianca":"alta"}],"duvida":null}
 "duvida": uma pergunta curta se algo essencial ficou ambíguo (ex.: "O frango era grelhado ou frito?"), senão null.`;
+
+  // acrescentado ao pedido quando a busca no FatSecret está ligada
+  const SYS_FS = `
+FATSECRET: antes de responder, pesquise cada alimento no FatSecret Brasil (site fatsecret.com.br; para marca, a página do produto daquela marca) usando a busca na web.
+- Em cada item, preencha "fatsecret" com o que a PÁGINA do FatSecret mostra, convertido para 100 g (ou 100 ml): {"url":"https://www.fatsecret.com.br/...","nome":"nome como está no FatSecret","por100":{"kcal":0,"p":0,"c":0,"g":0,"f":0,"na":0}}.
+- Só preencha se a página apareceu de verdade na sua busca. Se não achou, "fatsecret": null. Nunca invente número nem link do FatSecret.
+- Use o "por100" do FatSecret também no seu "por100", a não ser que esteja claramente errado.`;
 
   const SYS_LABEL = `Você lê tabelas de informação nutricional de embalagens brasileiras (RDC 429/2020 e modelo antigo).
 - Leia exatamente os números impressos; não estime. Vírgula é decimal.
@@ -138,7 +162,8 @@ Responda SÓ com JSON:
     if (image && !text) t += 'Foto do que a pessoa comeu.\n';
     if (previous) t += 'Sua resposta anterior foi: ' + JSON.stringify(previous) + '\nCorreção da pessoa: "' + correction + '". Refaça a lista inteira aplicando a correção.\n';
     content.push({ type: 'text', text: t || 'Analise.' });
-    return ask({ system: SYS_MEAL, content, kind: image ? 'foto' : 'texto', max: 4000 });
+    const web = fsOn();
+    return ask({ system: SYS_MEAL + (web ? SYS_FS : ''), content, kind: image ? 'foto' : 'texto', max: 4000, web });
   }
   async function label(image) {
     return ask({ system: SYS_LABEL, content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } }, { type: 'text', text: 'Leia a tabela nutricional desta foto.' }], kind: 'foto', max: 2000 });
@@ -176,8 +201,20 @@ Responda SÓ com JSON:
     const grams = Math.max(1, Math.round(num(it.gramas) || 100));
     const nat = it.tipo === 'natural' || it.tipo === 'preparado';
     let food = null, src = 'ia', note = '', check = '';
+    // 0) FatSecret: só se a busca da IA trouxe mesmo uma página do FatSecret e os números fecham (kcal ≈ 4P + 4C + 9G)
+    const fs = it.fatsecret && it.fatsecret.por100 ? it.fatsecret : null;
+    if (fs && it._fsSeen && FS_RE.test(fs.url || 'fatsecret.')) {
+      const v = { kcal: num(fs.por100.kcal), p: num(fs.por100.p) || 0, c: num(fs.por100.c) || 0, g: num(fs.por100.g) || 0, f: num(fs.por100.f), na: num(fs.por100.na) };
+      const atw = 4 * v.p + 4 * v.c + 9 * v.g, alc = it.tipo === 'bebida' && /cerveja|vinho|cacha|vodka|whisk|gin|rum|drink|caipi|licor|saqu|espumante|chopp/i.test(it.nome || '');
+      if (v.kcal != null && v.kcal >= 0 && v.kcal <= 900 && (alc || v.kcal < 5 && atw < 8 || Math.abs(atw - v.kcal) <= Math.max(15, v.kcal * 0.25))) {
+        const name = (fs.nome || it.nome || 'Alimento').trim(), ref = 'fs:' + Food.norm(name + '|' + (it.marca || '')).slice(0, 60);
+        const prev = Store.S.custom[ref];
+        food = prev && Math.abs((prev.kcal || 0) - v.kcal) < 1 ? prev : Food.addCustom({ ref, name, brand: it.marca || '', kcal: v.kcal, p: v.p, c: v.c, g: v.g, f: v.f, na: v.na, src: 'FatSecret', cat: 'FatSecret', url: fs.url || '' });
+        src = 'fatsecret'; check = fs.url || '';
+      }
+    }
     // 1) TACO / IBGE (Brasil, medido em laboratório) para alimento natural
-    if (nat && it.busca) {
+    if (!food && nat && it.busca) {
       const cands = Food.search(it.busca, 10).filter(f => (f.src === 'TACO' || f.src === 'IBGE') && f.kcal != null && !Food.brandy(f));
       const ok = cands.find(f => near(f.kcal, ai.kcal));
       if (ok) { food = ok; src = 'tabela'; }
@@ -208,10 +245,11 @@ Responda SÓ com JSON:
     }
     if (it.unidade === 'ml' && !food.unit && food.src !== 'TACO') food.unit = 'ml';
     const warn = Food.sanity(food, food.unit || 'g', true, food.name);
-    return { food, grams, src, note: note || (check ? 'USDA: ' + check : ''), warn: warn[0] || '', conf: it.confianca || 'media', qty: it.quantidade || '', heard: it.nome };
+    return { food, grams, src, note: note || (check ? (src === 'fatsecret' ? 'FatSecret' : 'USDA: ' + check) : ''), warn: warn[0] || '', conf: it.confianca || 'media', qty: it.quantidade || '', heard: it.nome };
   }
   // todos os itens em paralelo (a USDA é a única parte com rede)
-  const resolveAll = itens => Promise.all((itens || []).map(resolveItem));
+  // web: o que a busca da IA trouxe; o valor do FatSecret só vale se apareceu página do FatSecret
+  const resolveAll = (itens, web) => { const seen = (web || []).some(w => FS_RE.test(w)); return Promise.all((itens || []).map(it => resolveItem(Object.assign({}, it, { _fsSeen: seen })))); };
 
-  window.AI = { has, key, provider, setGemini: k => UCBridge.setSecret('gemini_key', (k || '').trim()), setQwen: k => UCBridge.setSecret('qwen_key', (k || '').trim()), qkey, setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
+  window.AI = { fsOn, has, key, provider, setGemini: k => UCBridge.setSecret('gemini_key', (k || '').trim()), setQwen: k => UCBridge.setSecret('qwen_key', (k || '').trim()), qkey, setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
 })();

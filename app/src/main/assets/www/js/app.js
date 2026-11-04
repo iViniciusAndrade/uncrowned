@@ -537,7 +537,7 @@
   }
 
   // ---------- anotar com IA ----------
-  const SRC = { tabela: 'Tabela TACO', marca: 'Marca', usda: 'USDA', ia: 'Estimativa da IA' };
+  const SRC = { fatsecret: 'FatSecret', tabela: 'Tabela TACO', marca: 'Marca', usda: 'USDA', ia: 'Estimativa da IA' };
   App._ai = null;
   function aiSetup(which) {
     const prov = which || AI.provider() || 'gemini';
@@ -591,13 +591,13 @@
   }
   async function aiRun(input, statusEl) {
     const st = statusEl || $('#ai-st');
-    if (st) st.innerHTML = '<p class="empty">A IA está pensando…</p>';
+    if (st) st.innerHTML = (AI.fsOn() ? '<p class="empty">A IA está pesquisando no FatSecret…</p>' : '<p class="empty">A IA está pensando…</p>');
     const b = $('#ai-go'); if (b) b.disabled = true;
     try {
       const r = await AI.meal(input);
       if (!r || !Array.isArray(r.itens) || !r.itens.length) { if (st) st.innerHTML = `<div class="note warn">${r && r.duvida ? esc(r.duvida) : 'Não achei comida nisso. Tente descrever de outro jeito.'}</div>`; if (b) b.disabled = false; return; }
-      if (st) st.innerHTML = '<p class="empty">Conferindo nas tabelas (TACO, marcas, USDA)…</p>';
-      App._ai = { input, raw: r, items: await AI.resolveAll(r.itens), meal: r.refeicao && MEAL_NAME[r.refeicao] ? r.refeicao : mealNow(), duvida: r.duvida };
+      if (st) st.innerHTML = '<p class="empty">Conferindo nas tabelas (FatSecret, TACO, marcas, USDA)…</p>';
+      App._ai = { input, raw: r, items: await AI.resolveAll(r.itens, r._web), meal: r.refeicao && MEAL_NAME[r.refeicao] ? r.refeicao : mealNow(), duvida: r.duvida };
       aiReview();
     } catch (e) {
       const m = String(e.message || e);
@@ -634,7 +634,7 @@
       try {
         const prev = Object.assign({}, A0.raw, { itens: A0.items.map(x => ({ nome: x.food.name, gramas: x.grams, quantidade: x.qty })) });
         const r = await AI.meal({ text: A0.input.text, image: A0.input.image, previous: prev, correction: c });
-        if (r && Array.isArray(r.itens)) { A0.raw = r; A0.items = await AI.resolveAll(r.itens); A0.duvida = r.duvida; if (r.refeicao && MEAL_NAME[r.refeicao]) A0.meal = r.refeicao; aiReview(); }
+        if (r && Array.isArray(r.itens)) { A0.raw = r; A0.items = await AI.resolveAll(r.itens, r._web); A0.duvida = r.duvida; if (r.refeicao && MEAL_NAME[r.refeicao]) A0.meal = r.refeicao; aiReview(); }
       } catch (e) { $('#ai-st').innerHTML = `<div class="note warn">${esc(e.message || e)}</div>`; }
     };
     $('#ai-ok').onclick = () => {
@@ -733,6 +733,7 @@
       <div class="swatches">${THEMES.map(([k, l, c]) => `<button type="button" class="swatch ${(s.settings.theme || 'padrao') === k ? 'on' : ''}" data-act="theme" data-arg="${k}" aria-label="Tema ${l}"><i style="background:${c}"></i>${l}</button>`).join('')}</div></div>
     <div class="card"><span class="lbl">IA para anotar comida</span>
       <div class="li"><div class="grow"><div class="t">${AI.has() ? 'Ligada · ' + ({ gemini: 'Gemini (grátis)', qwen: 'Qwen3.7-Plus', claude: 'Claude' })[AI.provider()] : 'Desligada'}</div><div class="s">${AI.has() ? 'Chave salva neste celular (termina em ' + esc(AI.key().slice(-4)) + ')' : 'Gemini é grátis: só precisa de uma conta Google'}</div></div><button class="btn sm" type="button" data-act="ai-setup">${AI.has() ? 'Trocar' : 'Ligar'}</button></div>
+      ${AI.has() ? `<div class="li"><div class="grow"><div class="t">Conferir no FatSecret</div><div class="s">A IA pesquisa cada alimento no FatSecret Brasil antes de responder. Fica alguns segundos mais lento.</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="aiFatsecret" ${s.settings.aiFatsecret !== false ? 'checked' : ''}></div>` : ''}
       ${AI.provider() === 'claude' ? '' : '<!--'}<div class="field"><label>Modelo</label><div class="seg">${[['auto', 'Automático'], ['barato', 'Econômico'], ['melhor', 'Melhor']].map(([v, l]) => `<button type="button" class="${(s.settings.aiModel || 'auto') === v ? 'on' : ''}" data-act="ai-model" data-arg="${v}">${l}</button>`).join('')}</div><span class="tiny mute">Automático: Sonnet 5.5 para fotos (lê melhor) e Haiku 5.5 para texto. Econômico: Haiku em tudo. Melhor: Sonnet em tudo.</span></div>${AI.provider() === 'claude' ? '' : '-->'}
       <div class="field"><label for="fdc-k">Chave grátis da USDA (FoodData Central)</label><div class="row"><input class="input" id="fdc-k" type="password" autocomplete="off" placeholder="${AI.fdcKey() === 'DEMO_KEY' ? 'usando a chave de demonstração' : 'salva (termina em ' + esc(AI.fdcKey().slice(-4)) + ')'}"><button class="btn sm" type="button" data-act="fdc-save">Salvar</button></div><span class="tiny mute">Sem ela, a consulta na USDA usa a chave de demonstração, que tem limite baixo. A grátis sai na hora em fdc.nal.usda.gov/api-key-signup.</span></div>
       ${AI.has() ? '<button class="btn sm ghost" type="button" data-act="ai-off">Desligar e apagar a chave</button>' : ''}</div>
