@@ -9,9 +9,14 @@
   const akey = () => (UCBridge.getSecret('anthropic_key') || '').trim();
   const gkey = () => (UCBridge.getSecret('gemini_key') || '').trim();
   const qkey = () => (UCBridge.getSecret('qwen_key') || '').trim();
-  const HAS = { claude: () => /^sk-ant-/.test(akey()), gemini: () => gkey().length > 20, qwen: () => /^sk-/.test(qkey()) && qkey().length > 20 };
-  const provider = () => { const p = Store.S.settings.aiProvider; if (p && HAS[p] && HAS[p]()) return p; return ['gemini', 'qwen', 'claude'].find(x => HAS[x]()) || null; };
-  const key = () => ({ gemini: gkey, qwen: qkey, claude: akey })[provider()]();
+  const rkey = () => (UCBridge.getSecret('groq_key') || '').trim();
+  const HAS = { groq: () => /^gsk_/.test(rkey()) && rkey().length > 20, claude: () => /^sk-ant-/.test(akey()), gemini: () => gkey().length > 20, qwen: () => /^sk-/.test(qkey()) && qkey().length > 20 };
+  const ORDER = ['groq', 'gemini', 'qwen', 'claude']; // Groq primeiro: grátis de verdade, sem cartão, e o mais rápido
+  const provider = () => { const p = Store.S.settings.aiProvider; if (p && HAS[p] && HAS[p]()) return p; return ORDER.find(x => HAS[x]()) || null; };
+  // ordem de tentativa: o escolhido e depois os outros que tiverem chave (se um estourar o limite, vai pro próximo sozinho)
+  const chain = () => { const p = provider(); return p ? [p].concat(ORDER.filter(x => x !== p && HAS[x]())) : []; };
+  const key = () => ({ groq: rkey, gemini: gkey, qwen: qkey, claude: akey })[provider()]();
+  const quotaErr = msg => { const e = new Error(msg); e.quota = true; return e; };
   const has = () => !!provider();
   // conferir no FatSecret: a IA pesquisa na web (só no FatSecret) antes de responder. Padrão: ligado.
   const fsOn = () => Store.S.settings.aiFatsecret !== false;
@@ -48,7 +53,8 @@
       if (r.status === 400 && body.tools && /tool|search|mime|json/i.test(msg) && !/api key/i.test(msg)) { delete body.generationConfig.responseMimeType; r = await UCBridge.httpPost('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent', { 'x-goog-api-key': gkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} if (r.status === 400) { delete body.tools; r = await UCBridge.httpPost('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent', { 'x-goog-api-key': gkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} } }
       if (r.status === 404 || (r.status === 400 && /not found|not supported|unknown model/i.test(msg))) { lastErr = new Error('Modelo ' + m + ' indisponível'); continue; } // modelo trocado pelo Google: tenta o próximo
       if (r.status === 400 && /api key/i.test(msg) || r.status === 401 || r.status === 403) throw new Error('Chave do Gemini inválida. Confira em Perfil > IA.');
-      if (r.status === 429) throw new Error('Limite grátis do Gemini atingido por agora. Espere um minuto (ou até amanhã, se for o limite do dia).');
+      if (r.status === 429 && body.tools) { delete body.tools; r = await UCBridge.httpPost('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent', { 'x-goog-api-key': gkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} } // a busca do Google não está no plano grátis: tenta sem ela
+      if (r.status === 429) { lastErr = quotaErr('Limite grátis do Gemini atingido por agora. Espere um minuto (ou até amanhã, se for o limite do dia).'); continue; } // cada modelo tem a sua cota: tenta o próximo
       if (r.status >= 500) throw new Error('O Gemini está instável agora. Tente de novo em um minuto.');
       if (!j || r.status >= 400) throw new Error(msg || 'Erro ' + r.status + ' no Gemini');
       gModel = m;
@@ -80,8 +86,8 @@
       if (r.status === 400 && /enable_thinking|response_format|search/i.test(msg)) { delete body.enable_thinking; if (/response_format/i.test(msg)) delete body.response_format; if (/search/i.test(msg)) { delete body.enable_search; delete body.search_options; } r = await UCBridge.httpPost(QURL, { Authorization: 'Bearer ' + qkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
       if (r.status === 404 || /model_not_found|ModelNotFound|does not exist|not support image|InvalidParameter.*model/i.test(code + ' ' + msg)) { lastErr = new Error('Modelo ' + m + ' indisponível'); continue; }
       if (r.status === 401 || /InvalidApiKey|invalid api.?key/i.test(code + msg)) throw new Error('Chave do Qwen inválida. Confira em Perfil > IA (precisa ser da região internacional, Singapura).');
-      if (/FreeTierOnly|AllocationQuota|quota/i.test(code + ' ' + msg)) throw new Error('A cota grátis do Qwen acabou. Ative outro provedor (Gemini é grátis) ou coloque crédito no Alibaba Cloud.');
-      if (r.status === 429) throw new Error('Muitos pedidos seguidos ao Qwen. Espere alguns segundos.');
+      if (r.status === 402 || /FreeTierOnly|AllocationQuota|quota|Arrearage|payment|balance/i.test(code + ' ' + msg)) throw quotaErr('A cota grátis do Qwen acabou. Ative outro provedor (Gemini é grátis) ou coloque crédito no Alibaba Cloud.');
+      if (r.status === 429) throw quotaErr('Muitos pedidos seguidos ao Qwen. Espere alguns segundos.');
       if (r.status >= 500) throw new Error('O Qwen está instável agora. Tente de novo em um minuto.');
       if (!j || r.status >= 400) throw new Error(msg || 'Erro ' + r.status + ' no Qwen');
       qModel = m;
@@ -94,21 +100,74 @@
     throw lastErr || new Error('Nenhum modelo do Qwen disponível');
   }
 
-  async function ask({ system, content, kind, max, web }) {
+  // Groq (grátis, sem cartão, API compatível com OpenAI). Qwen3.8 27B entende foto e responde em JSON.
+  const GURL = 'https://api.groq.com/openai/v1/chat/completions';
+  const GROQ = { foto: ['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b'], texto: ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] };
+  const groqDead = {};
+  async function groqCall(body) {
+    let r = await UCBridge.httpPost(GURL, { Authorization: 'Bearer ' + rkey() }, body);
+    let j = null; try { j = JSON.parse(r.body); } catch (e) {}
+    return { r, j, msg: (j && j.error && (j.error.message || j.error.code)) || '' };
+  }
+  async function askGroq({ system, content, kind }) {
+    const img = content.some(c => c.type === 'image');
+    const parts = content.map(c => c.type === 'image' ? { type: 'image_url', image_url: { url: 'data:' + c.source.media_type + ';base64,' + c.source.data } } : { type: 'text', text: c.text });
+    let lastErr = null;
+    for (const m of GROQ[img ? 'foto' : 'texto'].filter(x => !groqDead[x])) {
+      const body = { model: m, messages: [{ role: 'system', content: system }, { role: 'user', content: img ? parts : parts.map(p => p.text).join('\n') }], temperature: 0.2, response_format: { type: 'json_object' } };
+      if (/qwen/.test(m)) body.reasoning_effort = 'none'; else if (/gpt-oss/.test(m)) body.reasoning_effort = 'low';
+      let { r, j, msg } = await groqCall(body);
+      if (r.status === 400 && /reasoning/i.test(msg)) { delete body.reasoning_effort; ({ r, j, msg } = await groqCall(body)); }
+      if (r.status === 400 && /json_validate_failed|response_format/i.test(msg)) { delete body.response_format; ({ r, j, msg } = await groqCall(body)); }
+      if (r.status === 404 || /model_not_found|decommissioned|does not exist|not support/i.test(msg)) { groqDead[m] = 1; lastErr = new Error('Modelo ' + m + ' indisponível'); continue; }
+      if (r.status === 401) throw new Error('Chave do Groq inválida. Confira em Perfil > IA.');
+      if (r.status === 429 || r.status === 413) { lastErr = quotaErr('Limite grátis do Groq atingido por agora. Espere um minuto.'); continue; }
+      if (r.status >= 500) { lastErr = new Error('O Groq está instável agora. Tente de novo em um minuto.'); continue; }
+      if (!j || r.status >= 400) throw new Error(msg || 'Erro ' + r.status + ' no Groq');
+      const t = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+      return extractJSON(t);
+    }
+    throw lastErr || new Error('Nenhum modelo do Groq disponível');
+  }
+  // FatSecret pelo Groq: o GPT-OSS tem busca na web grátis; pesquisa os itens já entendidos (só texto, em uma chamada)
+  async function groqFatsecret(itens) {
+    const list = itens.map((it, i) => i + ': ' + (it.nome || '') + (it.marca ? ' (marca ' + it.marca + ')' : '')).join('\n');
+    const body = { model: 'openai/gpt-oss-120b', reasoning_effort: 'low', temperature: 0.1, tool_choice: 'required', tools: [{ type: 'browser_search' }],
+      messages: [{ role: 'system', content: 'Pesquise cada alimento no FatSecret Brasil (site:fatsecret.com.br). Converta os valores da página para 100 g (ou 100 ml). Nunca invente: se não achar a página, use null. Responda só com JSON: {"itens":[{"i":0,"url":"https://www.fatsecret.com.br/...","nome":"nome no FatSecret","por100":{"kcal":0,"p":0,"c":0,"g":0,"f":0,"na":0}}]}' }, { role: 'user', content: list }] };
+    const call = groqCall(body);
+    const res = await Promise.race([call, new Promise(ok => setTimeout(() => ok(null), 15000))]);
+    if (!res || !res.j || res.r.status >= 400) return [];
+    const msg = (res.j.choices && res.j.choices[0] && res.j.choices[0].message) || {};
+    let out = null; try { out = extractJSON(msg.content); } catch (e) { return []; }
+    const web = JSON.stringify(msg.executed_tools || []) + ' ' + (msg.content || '');
+    (out.itens || []).forEach(x => { const it = itens[+x.i]; if (it && x && x.por100 && FS_RE.test(x.url || '')) it.fatsecret = { url: x.url, nome: x.nome, por100: x.por100 }; });
+    return [web];
+  }
+
+  async function ask(args) {
     if (!has()) throw new Error('sem-chave');
-    if (provider() === 'gemini') return askGemini({ system, content, kind, web });
-    if (provider() === 'qwen') return askQwen({ system, content, kind, web });
+    let lastErr = null;
+    for (const p of chain()) {
+      try { const out = await askOne(p, args); out._prov = p; return out; }
+      catch (e) { lastErr = e; if (!e.quota) throw e; } // limite estourado ou sem crédito: tenta o próximo provedor com chave
+    }
+    throw lastErr;
+  }
+  async function askOne(p, { system, content, kind, max, web }) {
+    if (p === 'groq') return askGroq({ system, content, kind });
+    if (p === 'gemini') return askGemini({ system, content, kind, web });
+    if (p === 'qwen') return askQwen({ system, content, kind, web });
     // esforço baixo no texto (resposta rápida) e médio na foto (precisa olhar com mais cuidado)
     const body = { model: model(kind || 'texto'), max_tokens: max || 2500, system, messages: [{ role: 'user', content }], output_config: { effort: kind === 'foto' ? 'medium' : 'low' } };
     if (web) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4, allowed_domains: ['fatsecret.com.br', 'fatsecret.com'] }];
-    const H = { 'x-api-key': key(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+    const H = { 'x-api-key': akey(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
     let r = await UCBridge.httpPost(URL, H, body);
     let j = null; try { j = JSON.parse(r.body); } catch (e) {}
     if (r.status === 400 && j && j.error && /web_search|tool/i.test(j.error.message || '')) { delete body.tools; r = await UCBridge.httpPost(URL, H, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
     if (r.status === 400 && j && j.error && /output_config|effort/i.test(j.error.message || '')) { delete body.output_config; r = await UCBridge.httpPost(URL, H, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
     if (r.status === 401) throw new Error('Chave da IA inválida. Confira em Perfil > IA.');
-    if (r.status === 402 || (j && j.error && /credit|billing|balance/i.test(j.error.message || ''))) throw new Error('Sua conta da API está sem crédito. Coloque crédito em console.anthropic.com.');
-    if (r.status === 429) throw new Error('Muitos pedidos seguidos. Espere alguns segundos.');
+    if (r.status === 402 || (j && j.error && /credit|billing|balance/i.test(j.error.message || ''))) throw quotaErr('Sua conta da API está sem crédito. Coloque crédito em console.anthropic.com.');
+    if (r.status === 429) throw quotaErr('Muitos pedidos seguidos. Espere alguns segundos.');
     if (r.status >= 500 || r.status === 529) throw new Error('A IA está sobrecarregada agora. Tente de novo em um minuto.');
     if (!j || r.status >= 400) throw new Error((j && j.error && j.error.message) || 'Erro ' + r.status + ' na IA');
     const text = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -163,7 +222,10 @@ Responda SÓ com JSON:
     if (previous) t += 'Sua resposta anterior foi: ' + JSON.stringify(previous) + '\nCorreção da pessoa: "' + correction + '". Refaça a lista inteira aplicando a correção.\n';
     content.push({ type: 'text', text: t || 'Analise.' });
     const web = fsOn();
-    return ask({ system: SYS_MEAL + (web ? SYS_FS : ''), content, kind: image ? 'foto' : 'texto', max: 4000, web });
+    const out = await ask({ system: SYS_MEAL + (web && provider() !== 'groq' ? SYS_FS : ''), content, kind: image ? 'foto' : 'texto', max: 4000, web });
+    // o Groq entende rápido sem busca; o FatSecret vem numa segunda chamada com busca na web (se falhar, segue com as tabelas)
+    if (web && out._prov === 'groq' && Array.isArray(out.itens) && out.itens.length) { try { out._web = (out._web || []).concat(await groqFatsecret(out.itens)); } catch (e) {} }
+    return out;
   }
   async function label(image) {
     return ask({ system: SYS_LABEL, content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } }, { type: 'text', text: 'Leia a tabela nutricional desta foto.' }], kind: 'foto', max: 2000 });
@@ -251,5 +313,5 @@ Responda SÓ com JSON:
   // web: o que a busca da IA trouxe; o valor do FatSecret só vale se apareceu página do FatSecret
   const resolveAll = (itens, web) => { const seen = (web || []).some(w => FS_RE.test(w)); return Promise.all((itens || []).map(it => resolveItem(Object.assign({}, it, { _fsSeen: seen })))); };
 
-  window.AI = { fsOn, has, key, provider, setGemini: k => UCBridge.setSecret('gemini_key', (k || '').trim()), setQwen: k => UCBridge.setSecret('qwen_key', (k || '').trim()), qkey, setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
+  window.AI = { fsOn, has, key, provider, setGemini: k => UCBridge.setSecret('gemini_key', (k || '').trim()), setQwen: k => UCBridge.setSecret('qwen_key', (k || '').trim()), setGroq: k => UCBridge.setSecret('groq_key', (k || '').trim()), qkey, setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
 })();
