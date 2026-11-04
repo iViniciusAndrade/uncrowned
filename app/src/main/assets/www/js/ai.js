@@ -8,8 +8,10 @@
   const GEMINI = { normal: 'gemini-3.8-flash', reserva: ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'] };
   const akey = () => (UCBridge.getSecret('anthropic_key') || '').trim();
   const gkey = () => (UCBridge.getSecret('gemini_key') || '').trim();
-  const provider = () => { const p = Store.S.settings.aiProvider; if (p === 'claude' && /^sk-ant-/.test(akey())) return 'claude'; if (gkey().length > 20) return 'gemini'; if (/^sk-ant-/.test(akey())) return 'claude'; return null; };
-  const key = () => provider() === 'gemini' ? gkey() : akey();
+  const qkey = () => (UCBridge.getSecret('qwen_key') || '').trim();
+  const HAS = { claude: () => /^sk-ant-/.test(akey()), gemini: () => gkey().length > 20, qwen: () => /^sk-/.test(qkey()) && qkey().length > 20 };
+  const provider = () => { const p = Store.S.settings.aiProvider; if (p && HAS[p] && HAS[p]()) return p; return ['gemini', 'qwen', 'claude'].find(x => HAS[x]()) || null; };
+  const key = () => ({ gemini: gkey, qwen: qkey, claude: akey })[provider()]();
   const has = () => !!provider();
   const model = kind => { const m = (Store.S.settings.aiModel || 'auto'); return m === 'barato' ? MODELS.barato : m === 'melhor' ? MODELS.foto : MODELS[kind]; };
 
@@ -51,9 +53,38 @@
     throw lastErr || new Error('Nenhum modelo do Gemini disponível');
   }
 
+  // Qwen (Alibaba Model Studio, região internacional, API compatível com OpenAI).
+  // Qwen3.7-Plus: o mais inteligente que ainda responde rápido e enxerga foto; pensamento longo desligado.
+  const QWEN = ['qwen3.7-plus', 'qwen3.6-plus', 'qwen3.5-plus', 'qwen-plus'];
+  const QURL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions';
+  let qModel = null;
+  async function askQwen({ system, content, kind }) {
+    const parts = content.map(c => c.type === 'image' ? { type: 'image_url', image_url: { url: 'data:' + c.source.media_type + ';base64,' + c.source.data } } : { type: 'text', text: c.text });
+    const models = [qModel || QWEN[0]].concat(QWEN.filter(m => m !== (qModel || QWEN[0])));
+    let lastErr = null;
+    for (const m of models) {
+      const body = { model: m, messages: [{ role: 'system', content: system }, { role: 'user', content: parts }], temperature: 0.2, response_format: { type: 'json_object' }, enable_thinking: false };
+      let r = await UCBridge.httpPost(QURL, { Authorization: 'Bearer ' + qkey() }, body);
+      let j = null; try { j = JSON.parse(r.body); } catch (e) {}
+      const err = (j && j.error) || {}, msg = err.message || (j && j.message) || '', code = err.code || (j && j.code) || '';
+      if (r.status === 400 && /enable_thinking|response_format/i.test(msg)) { delete body.enable_thinking; if (/response_format/i.test(msg)) delete body.response_format; r = await UCBridge.httpPost(QURL, { Authorization: 'Bearer ' + qkey() }, body); j = null; try { j = JSON.parse(r.body); } catch (e) {} }
+      if (r.status === 404 || /model_not_found|ModelNotFound|does not exist|not support image|InvalidParameter.*model/i.test(code + ' ' + msg)) { lastErr = new Error('Modelo ' + m + ' indisponível'); continue; }
+      if (r.status === 401 || /InvalidApiKey|invalid api.?key/i.test(code + msg)) throw new Error('Chave do Qwen inválida. Confira em Perfil > IA (precisa ser da região internacional, Singapura).');
+      if (/FreeTierOnly|AllocationQuota|quota/i.test(code + ' ' + msg)) throw new Error('A cota grátis do Qwen acabou. Ative outro provedor (Gemini é grátis) ou coloque crédito no Alibaba Cloud.');
+      if (r.status === 429) throw new Error('Muitos pedidos seguidos ao Qwen. Espere alguns segundos.');
+      if (r.status >= 500) throw new Error('O Qwen está instável agora. Tente de novo em um minuto.');
+      if (!j || r.status >= 400) throw new Error(msg || 'Erro ' + r.status + ' no Qwen');
+      qModel = m;
+      const t = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+      return extractJSON(Array.isArray(t) ? t.map(x => x.text || '').join('') : t);
+    }
+    throw lastErr || new Error('Nenhum modelo do Qwen disponível');
+  }
+
   async function ask({ system, content, kind, max }) {
     if (!has()) throw new Error('sem-chave');
     if (provider() === 'gemini') return askGemini({ system, content, kind });
+    if (provider() === 'qwen') return askQwen({ system, content, kind });
     // esforço baixo no texto (resposta rápida) e médio na foto (precisa olhar com mais cuidado)
     const body = { model: model(kind || 'texto'), max_tokens: max || 2500, system, messages: [{ role: 'user', content }], output_config: { effort: kind === 'foto' ? 'medium' : 'low' } };
     const H = { 'x-api-key': key(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
@@ -182,5 +213,5 @@ Responda SÓ com JSON:
   // todos os itens em paralelo (a USDA é a única parte com rede)
   const resolveAll = itens => Promise.all((itens || []).map(resolveItem));
 
-  window.AI = { has, key, provider, setGemini: k => UCBridge.setSecret('gemini_key', (k || '').trim()), setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
+  window.AI = { has, key, provider, setGemini: k => UCBridge.setSecret('gemini_key', (k || '').trim()), setQwen: k => UCBridge.setSecret('qwen_key', (k || '').trim()), qkey, setKey: k => UCBridge.setSecret('anthropic_key', (k || '').trim()), setFdcKey: k => UCBridge.setSecret('fdc_key', (k || '').trim()), fdcKey, fdc, meal, label, resolveItem, resolveAll, extractJSON, MODELS };
 })();

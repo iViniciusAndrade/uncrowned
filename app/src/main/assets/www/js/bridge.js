@@ -26,6 +26,10 @@
       if (N && N.speak) { try { N.speak(String(text)); return; } catch (e) {} }
       try { if ('speechSynthesis' in window) { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = 'pt-BR'; speechSynthesis.speak(u); } } catch (e) {}
     },
+    aiSpeak(text, voice, waitMs) { if (N && N.aiSpeak) { try { N.aiSpeak(String(text), voice, waitMs | 0); return true; } catch (e) {} } B.speak(text); return false; },
+    aiPrefetch(list, voice) { if (N && N.aiPrefetch) { try { return N.aiPrefetch(JSON.stringify(list), voice); } catch (e) {} } return -1; },
+    aiVoiceInfo() { if (N && N.aiVoiceInfo) { try { return JSON.parse(N.aiVoiceInfo()); } catch (e) {} } return null; },
+    aiVoiceClear() { if (N && N.aiVoiceClear) { try { N.aiVoiceClear(); } catch (e) {} } },
     stopSpeak() { if (N && N.stopSpeak) { try { N.stopSpeak(); } catch (e) {} } try { speechSynthesis.cancel(); } catch (e) {} },
 
     // reconhecimento de voz: emite 'voice' {type:'partial'|'final'|'error'|'end', text}

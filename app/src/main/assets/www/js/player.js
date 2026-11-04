@@ -59,7 +59,10 @@
   const COOL = ['Respira devagar e solta.', 'Sem forçar, só sente alongar.', 'Relaxa os ombros. Isso.'];
   const NUMS = ['zero', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'catorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove', 'vinte'];
   // fala e devolve quanto tempo (ms) a frase deve levar, para a contagem não atropelar a explicação
-  const say = t => { if (Store.S.settings.voice) UCBridge.speak(t); return Store.S.settings.voice ? Math.round(String(t).length / 13.5 * 1000 / (+(Store.S.settings.vRate || 1))) : 0; };
+  // voz do Qwen quando ligada (Perfil > Voz), com o TTS do Android de reserva
+  const qwenVoice = () => !!(Store.S.settings.aiVoice && window.AI && AI.qkey && AI.qkey());
+  const VNAME = () => Store.S.settings.aiVoiceName || 'Cherry';
+  const say = t => { if (Store.S.settings.voice) { if (qwenVoice()) UCBridge.aiSpeak(t, VNAME(), 1600); else UCBridge.speak(t); } return Store.S.settings.voice ? Math.round(String(t).length / 13.5 * 1000 / (+(Store.S.settings.vRate || 1))) : 0; };
   const sayNum = n => n <= 20 ? NUMS[n] : String(n);
   function tempo(ex) { if (!ex) return 2.5; if (ex.pat === 'cardio') return 1.3; if (ex.pat === 'mob' || ex.pat === 'face') return 2.5; if (ex.pat === 'core') return 2.4; return 2.7; }
   function repTarget(reps) { if (!reps) return null; const m = String(reps).match(/^(\d+)(\s*por lado)?/); if (!m) return null; return { n: +m[1] * (m[2] ? 2 : 1), sides: !!m[2], per: +m[1] }; }
@@ -80,7 +83,7 @@
     opts = opts || {};
     P.session = session; P.meta = meta || {}; P.steps = build(session); P.i = -1; P.paused = false; P.done = false; P.kcal = 0; P.net = 0; P.rounds = 0; P.active = 0; P.started = false; P.auto = !!opts.auto; P.told = {};
     const el = $('#player'); el.classList.add('open'); el.setAttribute('aria-hidden', 'false');
-    if (P.auto) { UCBridge.keepAwake(true); startRun(); if (Store.S.settings.handsFree) setTimeout(listenLoop, 4000); return; }
+    if (P.auto) { UCBridge.keepAwake(true); if (Store.S.settings.voice && qwenVoice()) UCBridge.aiPrefetch(phrases(''), VNAME()); startRun(); if (Store.S.settings.handsFree) setTimeout(listenLoop, 4000); return; }
     const blocks = session.blocks.map(b => {
       const items = (b.items || []).map(x => Array.isArray(x) ? x : [x]);
       let info = b.kind === 'list' ? b.secs + ' s cada' : b.kind === 'timed' ? (b.rounds + (b.rounds > 1 ? ' voltas' : ' volta') + ' · ' + b.work + ' s cada') : b.kind === 'circuit' ? b.rounds + ' voltas' : b.kind === 'amrap' ? b.mins + ' minutos, o máximo de voltas' : b.kind === 'ladder' ? 'de 1 até ' + b.top + ' e volta' : 'séries';
@@ -93,7 +96,7 @@
       <div class="intro"><div class="mq" id="pl-mq" style="max-height:26vh;width:min(100%,26vh);align-self:center"></div><span class="lbl">Hoje</span><h1>${esc(session.name)}</h1>${session.short ? `<p class="small ink2">${esc(session.short)}</p>` : ''}
         <div class="grid3"><div class="tile"><span class="lbl">Tempo</span><span class="v">~${mins} min</span></div><div class="tile"><span class="lbl">Exercícios</span><span class="v">${n}</span></div><div class="tile"><span class="lbl">Gasto</span><span class="v">~${est.kcal}</span><span class="tiny mute">kcal</span></div></div>
         <div class="card tight">${blocks}</div>
-        <p class="tiny mute">A treinadora fala cada exercício, conta as repetições e avisa o tempo. Diga “pausa”, “continua”, “próximo” ou “feito” a qualquer momento.</p></div>
+        <p class="tiny mute">A treinadora fala cada exercício, conta as repetições e avisa o tempo. Diga “pausa”, “continua”, “próximo” ou “feito” a qualquer momento.</p><p class="tiny mute" id="pl-vprep"></p></div>
       <div class="ctrl intro-ctrl"><button class="btn pri play" id="pl-play" type="button" aria-label="Começar o treino"><svg viewBox="0 0 24 24" style="width:30px;height:30px"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg><span>Começar</span></button></div>`;
     $('#pl-exit').onclick = close;
     $('#pl-voice').onclick = () => { const st = Store.S.settings; st.voice = !st.voice; Store.save(); $('#pl-voice').textContent = st.voice ? 'Voz ligada' : 'Voz desligada'; if (!st.voice) UCBridge.stopSpeak(); };
@@ -102,7 +105,13 @@
     Mannequin.show($('#pl-mq'), first ? first.ex.anim : 'stand');
     UCBridge.keepAwake(true);
     const list = Array.from(new Set(P.steps.filter(x => x.ph === 'work' || x.ph === 'amrap').map(x => x.ex.n))).slice(0, 6);
-    say('Oi! Hoje é ' + session.name + '. Cerca de ' + mins + ' minutos' + (list.length ? ', com ' + list.join(', ') : '') + '. Quando estiver pronto, aperta o play que eu vou te guiando.');
+    const intro = 'Oi! Hoje é ' + session.name + '. Cerca de ' + mins + ' minutos' + (list.length ? ', com ' + list.join(', ') : '') + '. Quando estiver pronto, aperta o play que eu vou te guiando.';
+    say(intro);
+    if (Store.S.settings.voice && qwenVoice()) {
+      const all = phrases(intro), el = $('#pl-vprep');
+      const ready = UCBridge.aiPrefetch(all, VNAME());
+      if (el && ready >= 0 && ready < all.length) el.textContent = 'Preparando a voz da treinadora: ' + ready + ' de ' + all.length + ' frases. Pode começar, o que faltar sai na voz do celular.';
+    }
     if (Store.S.settings.handsFree) setTimeout(listenLoop, 2500);
   }
   function startRun() {
@@ -132,20 +141,45 @@
     const rt = s.manual ? repTarget(s.reps) : null;
     P.count = rt ? { target: rt.n, sides: rt.sides, per: rt.per, done: 0, tempo: tempo(s.ex), nextAt: Date.now() + 3200 } : null;
     const v = Mannequin.viewer(); const ex = s.ex || s.next; if (v && ex) v.play(ex.anim);
-    const how = s.ex && !P.told[s.ex.id] && s.ex.how ? ' ' + s.ex.how : ''; if (s.ex) P.told[s.ex.id] = 1;
-    if (i === 0 && s.ph === 'prep' && P.auto) say('Vamos começar! Se prepara: em ' + s.secs + ' segundos, ' + (/aquec/i.test(s.name) ? 'vamos pelo aquecimento' : 'vamos para ' + s.name.toLowerCase()) + '. Primeiro, ' + (s.next ? s.next.n : '') + '.');
-    else if (s.ph === 'warm') say((P.steps[i - 1] && P.steps[i - 1].ph === 'warm' ? 'Agora, ' : 'Bora, aquecendo. ') + s.name + ', ' + s.secs + ' segundos.' + how);
-    else if (s.ph === 'cool') say((P.steps[i - 1] && P.steps[i - 1].ph === 'cool' ? 'Agora, ' : 'Hora de alongar. ') + s.name + ', ' + s.secs + ' segundos.' + how);
-    else if (s.ph === 'work' && rt) { const ms = say(s.name + '. ' + (rt.sides ? rt.per + ' de cada lado' : rt.n + ' repetições') + '.' + how + ' Comigo, no meu ritmo. Já!'); P.count.nextAt = Date.now() + Math.max(3200, ms + 500); }
-    else if (s.ph === 'work' && s.manual) say(s.name + ', ' + (s.reps === 'o máximo' ? 'o máximo que conseguir com boa técnica. Aperta feito quando terminar.' : s.reps + '. Aperta feito quando terminar.'));
-    else if (s.ph === 'work') say('Vamos lá. ' + s.name + ', ' + s.secs + ' segundos.' + how);
-    else if (s.ph === 'rest') say('Descanso de ' + s.secs + ' segundos. Respira. Depois vem ' + (s.next ? s.next.n : 'o fim') + '.');
-    else if (s.ph === 'prep') say(s.name + '. Prepara aí, ' + s.secs + ' segundos. Primeiro, ' + (s.next ? s.next.n : '') + '.');
-    else if (s.ph === 'amrap') say('Valendo! ' + Math.round(s.secs / 60) + ' minutos. ' + s.list.map(x => x[1] + ' ' + x[0].n).join(', ') + '. A cada volta, aperta mais uma volta.');
-    else say(s.name + ', ' + s.secs + ' segundos.');
+    const ms = say(lineFor(i, P.told, P.auto));
+    if (P.count) P.count.nextAt = Date.now() + Math.max(3200, ms + 500);
     UCBridge.vibrate(s.ph === 'work' || s.ph === 'amrap' ? 220 : 90);
     render();
   }
+  // a frase que a treinadora fala ao entrar na etapa i (told: exercícios já explicados)
+  function lineFor(i, told, auto) {
+    const s = P.steps[i];
+    const rt = s.manual ? repTarget(s.reps) : null;
+    const how = s.ex && !told[s.ex.id] && s.ex.how ? ' ' + s.ex.how : ''; if (s.ex) told[s.ex.id] = 1;
+    if (i === 0 && s.ph === 'prep' && auto) return 'Vamos começar! Se prepara: em ' + s.secs + ' segundos, ' + (/aquec/i.test(s.name) ? 'vamos pelo aquecimento' : 'vamos para ' + s.name.toLowerCase()) + '. Primeiro, ' + (s.next ? s.next.n : '') + '.';
+    if (s.ph === 'warm') return (P.steps[i - 1] && P.steps[i - 1].ph === 'warm' ? 'Agora, ' : 'Bora, aquecendo. ') + s.name + ', ' + s.secs + ' segundos.' + how;
+    if (s.ph === 'cool') return (P.steps[i - 1] && P.steps[i - 1].ph === 'cool' ? 'Agora, ' : 'Hora de alongar. ') + s.name + ', ' + s.secs + ' segundos.' + how;
+    if (s.ph === 'work' && rt) return s.name + '. ' + (rt.sides ? rt.per + ' de cada lado' : rt.n + ' repetições') + '.' + how + ' Comigo, no meu ritmo. Já!';
+    if (s.ph === 'work' && s.manual) return s.name + ', ' + (s.reps === 'o máximo' ? 'o máximo que conseguir com boa técnica. Aperta feito quando terminar.' : s.reps + '. Aperta feito quando terminar.');
+    if (s.ph === 'work') return 'Vamos lá. ' + s.name + ', ' + s.secs + ' segundos.' + how;
+    if (s.ph === 'rest') return 'Descanso de ' + s.secs + ' segundos. Respira. Depois vem ' + (s.next ? s.next.n : 'o fim') + '.';
+    if (s.ph === 'prep') return s.name + '. Prepara aí, ' + s.secs + ' segundos. Primeiro, ' + (s.next ? s.next.n : '') + '.';
+    if (s.ph === 'amrap') return 'Valendo! ' + Math.round(s.secs / 60) + ' minutos. ' + s.list.map(x => x[1] + ' ' + x[0].n).join(', ') + '. A cada volta, aperta mais uma volta.';
+    return s.name + ', ' + s.secs + ' segundos.';
+  }
+  // todas as frases que podem sair neste treino, para a voz do Qwen já ter tudo pronto
+  function phrases(intro) {
+    const out = new Set([intro]), told = {};
+    P.steps.forEach((s, i) => out.add(lineFor(i, told, P.auto)));
+    const add = t => out.add(t);
+    CHEER.concat(WARM, COOL).forEach(add);
+    ['Metade. ', ''].forEach(pre => CHEER.forEach(c => add(pre + c)));
+    ['Faltam dez segundos.', 'Último minuto, acelera!', 'Três, dois, um.', 'Três, dois, um, troca.', 'Três, dois, um, já!', 'Prepara. Três, dois, um.', 'Continuando.', 'Pausado.', 'Troca de lado. um'].forEach(add);
+    let max = 0; P.steps.forEach(s => { const r = s.manual && repTarget(s.reps); if (r) { max = Math.max(max, r.sides ? r.per : r.n); add(sayNum(r.n) + '. Boa!'); } });
+    for (let n = 1; n <= Math.min(max, 60); n++) add(sayNum(n));
+    return Array.from(out).filter(Boolean);
+  }
+  UCBridge.on('voiceprep', d => {
+    const el = document.getElementById('pl-vprep'); if (!el || !d) return;
+    if (d.err && /401|InvalidApiKey/i.test(d.err)) el.textContent = 'A chave do Qwen foi recusada. A voz do celular vai falar.';
+    else if (d.err && /FreeTierOnly|quota|Allocation/i.test(d.err)) el.textContent = 'A cota grátis de voz do Qwen acabou. A voz do celular vai falar.';
+    else el.textContent = d.done >= d.total ? 'Voz da treinadora pronta.' : 'Preparando a voz da treinadora: ' + d.done + ' de ' + d.total + ' frases.';
+  });
   function accrue() {
     const s = step(); if (!s || !P.stepStart || P.paused) return;
     const secs = (Date.now() - P.stepStart) / 1000; if (secs <= 0) return;

@@ -540,11 +540,14 @@
   const SRC = { tabela: 'Tabela TACO', marca: 'Marca', usda: 'USDA', ia: 'Estimativa da IA' };
   App._ai = null;
   function aiSetup(which) {
-    const prov = which || (AI.provider() === 'claude' ? 'claude' : 'gemini');
-    const gem = prov === 'gemini';
+    const prov = which || AI.provider() || 'gemini';
+    const gem = prov === 'gemini', qw = prov === 'qwen';
     App.sheet(`<h2>Ligar a IA</h2>
-      <div class="seg"><button type="button" class="${gem ? 'on' : ''}" data-act="ai-setup" data-arg="gemini">Gemini (grátis)</button><button type="button" class="${!gem ? 'on' : ''}" data-act="ai-setup" data-arg="claude">Claude (pago)</button></div>
-      ${gem ? `<p class="small ink2">O Gemini, do Google, tem plano grátis sem cartão. Entende texto, voz e foto do prato e lê tabela nutricional.</p>
+      <div class="seg"><button type="button" class="${gem ? 'on' : ''}" data-act="ai-setup" data-arg="gemini">Gemini</button><button type="button" class="${qw ? 'on' : ''}" data-act="ai-setup" data-arg="qwen">Qwen</button><button type="button" class="${prov === 'claude' ? 'on' : ''}" data-act="ai-setup" data-arg="claude">Claude</button></div>
+      ${qw ? `<p class="small ink2">Qwen, da Alibaba. Usa o Qwen3.7-Plus (inteligente e rápido, entende foto) e também pode ser a voz da treinadora nos treinos. Conta nova ganha 1 milhão de tokens grátis por modelo, por 90 dias.</p>
+      <ol class="small ink2" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px"><li>Crie a conta em <b>alibabacloud.com</b> e abra o <b>Model Studio</b> na região <b>Singapura</b> (internacional).</li><li>Em <b>API Key</b>, crie uma chave e cole aqui (começa com sk-).</li><li>Para nunca ser cobrado: em cada modelo usado (qwen3.7-plus e qwen3-tts-flash), ligue <b>Free Quota Only</b>.</li></ol>
+      <div class="field"><label for="ai-k">Chave do Qwen</label><input class="input" id="ai-k" type="password" autocomplete="off" placeholder="sk-..."></div>
+      <button class="btn ghost block" type="button" data-act="url" data-arg="https://modelstudio.console.alibabacloud.com/">Abrir o Model Studio</button>` : gem ? `<p class="small ink2">O Gemini, do Google, tem plano grátis sem cartão. Entende texto, voz e foto do prato e lê tabela nutricional.</p>
       <ol class="small ink2" style="padding-left:18px;margin:0;display:flex;flex-direction:column;gap:6px"><li>Entre em <b>aistudio.google.com</b> com sua conta Google.</li><li>Toque em <b>Get API key</b> e depois <b>Create API key</b>.</li><li>Copie a chave (começa com AIza) e cole aqui.</li></ol>
       <div class="field"><label for="ai-k">Chave do Gemini</label><input class="input" id="ai-k" type="password" autocomplete="off" placeholder="AIza..."></div>
       <p class="tiny mute">Grátis com limite por minuto e por dia (sobra para anotar as refeições). No plano grátis o Google pode usar o que você manda para melhorar os modelos dele.</p>
@@ -558,8 +561,9 @@
     $('#ai-save').onclick = async () => {
       const k = $('#ai-k').value.trim();
       if (gem && !/^AIza/.test(k)) return App.toast('A chave do Gemini começa com AIza');
-      if (!gem && !/^sk-ant-/.test(k)) return App.toast('A chave começa com sk-ant-');
-      if (gem) AI.setGemini(k); else AI.setKey(k);
+      if (qw && !/^sk-/.test(k)) return App.toast('A chave do Qwen começa com sk-');
+      if (prov === 'claude' && !/^sk-ant-/.test(k)) return App.toast('A chave começa com sk-ant-');
+      if (gem) AI.setGemini(k); else if (qw) AI.setQwen(k); else AI.setKey(k);
       S().settings.aiProvider = prov; Store.save();
       $('#ai-st').innerHTML = '<p class="empty">Testando…</p>';
       try { const r = await AI.meal({ text: 'comi 1 ovo cozido' }); if (!r || !r.itens) throw new Error('resposta estranha'); $('#ai-st').innerHTML = '<div class="note">Funcionando. Já pode anotar com IA.</div>'; App.render(); }
@@ -728,14 +732,16 @@
     <div class="card"><span class="lbl">Aparência</span><p class="tiny mute">Cor de destaque do app. O fundo continua preto.</p>
       <div class="swatches">${THEMES.map(([k, l, c]) => `<button type="button" class="swatch ${(s.settings.theme || 'padrao') === k ? 'on' : ''}" data-act="theme" data-arg="${k}" aria-label="Tema ${l}"><i style="background:${c}"></i>${l}</button>`).join('')}</div></div>
     <div class="card"><span class="lbl">IA para anotar comida</span>
-      <div class="li"><div class="grow"><div class="t">${AI.has() ? 'Ligada · ' + (AI.provider() === 'gemini' ? 'Gemini (grátis)' : 'Claude') : 'Desligada'}</div><div class="s">${AI.has() ? 'Chave salva neste celular (termina em ' + esc(AI.key().slice(-4)) + ')' : 'Gemini é grátis: só precisa de uma conta Google'}</div></div><button class="btn sm" type="button" data-act="ai-setup">${AI.has() ? 'Trocar' : 'Ligar'}</button></div>
+      <div class="li"><div class="grow"><div class="t">${AI.has() ? 'Ligada · ' + ({ gemini: 'Gemini (grátis)', qwen: 'Qwen3.7-Plus', claude: 'Claude' })[AI.provider()] : 'Desligada'}</div><div class="s">${AI.has() ? 'Chave salva neste celular (termina em ' + esc(AI.key().slice(-4)) + ')' : 'Gemini é grátis: só precisa de uma conta Google'}</div></div><button class="btn sm" type="button" data-act="ai-setup">${AI.has() ? 'Trocar' : 'Ligar'}</button></div>
       ${AI.provider() === 'claude' ? '' : '<!--'}<div class="field"><label>Modelo</label><div class="seg">${[['auto', 'Automático'], ['barato', 'Econômico'], ['melhor', 'Melhor']].map(([v, l]) => `<button type="button" class="${(s.settings.aiModel || 'auto') === v ? 'on' : ''}" data-act="ai-model" data-arg="${v}">${l}</button>`).join('')}</div><span class="tiny mute">Automático: Sonnet 5.5 para fotos (lê melhor) e Haiku 5.5 para texto. Econômico: Haiku em tudo. Melhor: Sonnet em tudo.</span></div>${AI.provider() === 'claude' ? '' : '-->'}
       <div class="field"><label for="fdc-k">Chave grátis da USDA (FoodData Central)</label><div class="row"><input class="input" id="fdc-k" type="password" autocomplete="off" placeholder="${AI.fdcKey() === 'DEMO_KEY' ? 'usando a chave de demonstração' : 'salva (termina em ' + esc(AI.fdcKey().slice(-4)) + ')'}"><button class="btn sm" type="button" data-act="fdc-save">Salvar</button></div><span class="tiny mute">Sem ela, a consulta na USDA usa a chave de demonstração, que tem limite baixo. A grátis sai na hora em fdc.nal.usda.gov/api-key-signup.</span></div>
       ${AI.has() ? '<button class="btn sm ghost" type="button" data-act="ai-off">Desligar e apagar a chave</button>' : ''}</div>
     <div class="card"><span class="lbl">Voz</span>
       <div class="li"><div class="grow"><div class="t">Treinador fala durante o treino</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="voice" ${s.settings.voice ? 'checked' : ''} aria-label="Treinador fala"></div>
       <div class="li"><div class="grow"><div class="t">Mãos livres no treino</div><div class="s">Fica ouvindo “pausa”, “próximo”, “feito”, “volta”</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="handsFree" ${s.settings.handsFree ? 'checked' : ''} aria-label="Mãos livres"></div>
-      <div class="field"><label>Voz da treinadora</label><div class="list" id="voice-list">${voiceList()}</div><div class="grid2"><div class="field"><label for="v-rate">Velocidade</label><input type="range" id="v-rate" min="0.7" max="1.3" step="0.02" value="${s.settings.vRate || 0.98}"></div><div class="field"><label for="v-pitch">Tom</label><input type="range" id="v-pitch" min="0.8" max="1.4" step="0.02" value="${s.settings.vPitch || 1.06}"></div></div><div class="grid2"><button class="btn sm" type="button" data-act="voice-test">Ouvir</button><button class="btn sm ghost" type="button" data-act="voice-more">Baixar mais vozes</button></div><p class="tiny mute">As vozes vêm do motor de voz do Google no celular. Se aparecerem poucas, toque em “Baixar mais vozes” e instale o pacote de português (Brasil).</p></div>
+      <div class="li"><div class="grow"><div class="t">Voz da IA (Qwen)</div><div class="s">${AI.qkey() ? 'A treinadora fala com a voz do Qwen-TTS. Cada frase é gerada uma vez e fica guardada no celular.' : 'Precisa da chave do Qwen (Perfil > IA para anotar comida > Qwen).'}</div></div><input type="checkbox" class="switch" data-act="set-bool" data-arg="aiVoice" ${s.settings.aiVoice && AI.qkey() ? 'checked' : ''} ${AI.qkey() ? '' : 'disabled'}></div>
+      ${s.settings.aiVoice && AI.qkey() ? `<div class="field"><label>Voz do Qwen</label><div class="seg">${[['Cherry', 'Cherry'], ['Serena', 'Serena'], ['Chelsie', 'Chelsie']].map(([v, l]) => `<button type="button" class="${(s.settings.aiVoiceName || 'Cherry') === v ? 'on' : ''}" data-act="qvoice" data-arg="${v}">${l}</button>`).join('')}</div><div class="grid2"><button class="btn sm" type="button" data-act="qvoice-test">Ouvir</button><button class="btn sm ghost" type="button" data-act="qvoice-clear">Apagar frases salvas</button></div><p class="tiny mute">Na primeira vez de cada treino ela prepara as frases (precisa de internet). Sem internet, ou se a cota grátis acabar, fala a voz do celular abaixo.</p></div>` : ''}
+      <div class="field"><label>Voz da treinadora${s.settings.aiVoice && AI.qkey() ? ' (reserva)' : ''}</label><div class="list" id="voice-list">${voiceList()}</div><div class="grid2"><div class="field"><label for="v-rate">Velocidade</label><input type="range" id="v-rate" min="0.7" max="1.3" step="0.02" value="${s.settings.vRate || 0.98}"></div><div class="field"><label for="v-pitch">Tom</label><input type="range" id="v-pitch" min="0.8" max="1.4" step="0.02" value="${s.settings.vPitch || 1.06}"></div></div><div class="grid2"><button class="btn sm" type="button" data-act="voice-test">Ouvir</button><button class="btn sm ghost" type="button" data-act="voice-more">Baixar mais vozes</button></div><p class="tiny mute">As vozes vêm do motor de voz do Google no celular. Se aparecerem poucas, toque em “Baixar mais vozes” e instale o pacote de português (Brasil).</p></div>
       <div class="grid2"><div class="field"><label for="cup">Meu copo (ml)</label><input class="input" id="cup" inputmode="numeric" data-set="cupMl" value="${s.settings.cupMl}"></div><div class="field"><label for="bot">Minha garrafa (ml)</label><input class="input" id="bot" inputmode="numeric" data-set="bottleMl" value="${s.settings.bottleMl}"></div></div></div>
     <div class="card"><span class="lbl">Dados</span><p class="tiny mute">Tudo fica salvo só neste celular. Faça um backup de vez em quando.</p><div class="grid2"><button class="btn" type="button" data-act="backup">Exportar backup</button><button class="btn" type="button" data-act="restore">Importar backup</button></div><button class="btn danger block" type="button" data-act="wipe">Apagar tudo</button></div>
     <div class="card"><span class="lbl">Sobre</span><p class="small"><b>Uncrowned Train</b> · UncrownedLabs<br><span class="mute">por Vinicius Andrade · versão ${esc(UCBridge.appVersion())}</span></p><p class="tiny mute">Alimentos: TACO 4ª ed., NEPA/UNICAMP, 2011. Medidas caseiras: IBGE, POF 2008-2009 (mapeamento do projeto taco-br-mcp). Produtos de marca: Open Food Facts (ODbL). Gasto calórico: 2024 Adult Compendium of Physical Activities (Herrmann et al., J Sport Health Sci 2024), com o MET corrigido pelo gasto basal (Mifflin-St Jeor). Mapas: OpenStreetMap. Este app não substitui orientação de médico, nutricionista ou educador físico.</p></div>`;
@@ -884,6 +890,9 @@
       case 'hal-week': s.hal.week = +arg; Store.save(); App.render(); break;
       case 'voice-pick': s.settings.voiceName = arg; Store.save(); UCBridge.setVoice(arg, +(s.settings.vRate || 0.98), +(s.settings.vPitch || 1.06)); setTimeout(() => UCBridge.speak('Oi, eu sou a sua treinadora. Bora treinar?'), 300); App.render(); break;
       case 'voice-test': UCBridge.setVoice(s.settings.voiceName || '', +(s.settings.vRate || 0.98), +(s.settings.vPitch || 1.06)); setTimeout(() => UCBridge.speak('Agachamento. Dez repetições. Comigo: um, dois, três. Isso, continua assim.'), 250); break;
+      case 'qvoice': s.settings.aiVoiceName = arg; Store.save(); App.render(); UCBridge.aiSpeak('Oi, eu sou a sua treinadora. Bora treinar?', arg, 8000); break;
+      case 'qvoice-test': { UCBridge.aiSpeak('Agachamento. Dez repetições. Comigo: um, dois, três. Isso, continua assim.', s.settings.aiVoiceName || 'Cherry', 8000); setTimeout(() => { const i = UCBridge.aiVoiceInfo(); if (i && i.err) App.toast('Qwen: ' + i.err.slice(0, 120)); }, 9000); break; }
+      case 'qvoice-clear': UCBridge.aiVoiceClear(); App.toast('Frases apagadas'); break;
       case 'voice-more': if (!UCBridge.openTtsSettings()) App.toast('Só no app Android'); break;
       case 'welcome-ok': App.welcome = false; App.render(); break;
       case 'sub': App.remember(); App.sub.treino = arg; App.progOpen = null; App.render(); break;
@@ -926,7 +935,7 @@
       case 'ai-setup': aiSetup(arg); break;
       case 'ai-model': s.settings.aiModel = arg; Store.save(); App.render(); break;
       case 'fdc-save': { const k = ($('#fdc-k').value || '').trim(); if (k.length < 20) { App.toast('Cole a chave da USDA'); break; } AI.setFdcKey(k); App.render(); App.toast('Chave da USDA salva'); break; }
-      case 'ai-off': AI.setKey(''); AI.setGemini(''); App.render(); App.toast('IA desligada'); break;
+      case 'ai-off': AI.setKey(''); AI.setGemini(''); AI.setQwen(''); App.render(); App.toast('IA desligada'); break;
       case 'photo-label': photoLabel({ meal: fs.meal || mealNow() }); break;
       case 'fs-retry': e.preventDefault(); fs.err = false; online(); break;
       case 'custom-new': customForm(arg || ''); break;
@@ -955,7 +964,7 @@
       case 'water-every': s.settings.reminders.water.every = +arg; Store.save(); syncReminders(); App.render(); break;
       case 'rem-test': if (!UCBridge.testReminder('Teste do Uncrowned', 'Se você viu isso, os lembretes estão funcionando.')) App.toast('Notificações só funcionam no app Android'); break;
       case 'perm': if (!UCBridge.requestPermission(arg)) App.toast('Só no app Android'); setTimeout(() => App.render(), 1500); break;
-      case 'set-bool': s.settings[arg] = t.checked; Store.save(); break;
+      case 'set-bool': s.settings[arg] = t.checked; Store.save(); if (arg === 'aiVoice') App.render(); break;
       case 'backup': { const raw = JSON.stringify(s); if (!UCBridge.share('uncrowned-backup-' + Store.dkey() + '.json', raw)) App.toast('Backup copiado'); break; }
       case 'restore': App.sheet(`<h2>Importar backup</h2><p class="small mute">Cole aqui o conteúdo do backup. Isso substitui tudo o que está no app.</p><textarea class="input" id="rs"></textarea><button class="btn pri block" type="button" data-act="restore-ok">Importar</button>`); break;
       case 'restore-ok': try { const o = JSON.parse($('#rs').value); if (!o || typeof o !== 'object' || !('days' in o)) throw 0; Store.replace(o); App.closeSheet(); App.applyTheme(); App.render(); syncReminders(); App.toast('Backup importado'); } catch (er) { App.toast('Esse texto não é um backup válido'); } break;

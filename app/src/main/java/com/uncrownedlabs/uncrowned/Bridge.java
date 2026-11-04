@@ -114,9 +114,30 @@ public class Bridge {
 
     // ---------- fala ----------
     @JavascriptInterface public void speak(String text) {
-        if (tts != null && ttsReady) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "uc");
+        if (qv != null) qv.stop();
+        ttsSpeak(text);
     }
-    @JavascriptInterface public void stopSpeak() { if (tts != null) tts.stop(); }
+    void ttsSpeak(String text) { if (tts != null && ttsReady) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "uc"); }
+    @JavascriptInterface public void stopSpeak() { if (tts != null) tts.stop(); if (qv != null) qv.stop(); }
+
+    // ---------- voz do Qwen (IA) ----------
+    QwenVoice qv;
+    QwenVoice qv() { if (qv == null) qv = new QwenVoice(a); return qv; }
+    /** Fala com a voz do Qwen; se a frase não ficar pronta em waitMs, fala com o TTS do Android. */
+    @JavascriptInterface public void aiSpeak(String text, String voice, int waitMs) {
+        if (tts != null) tts.stop();
+        qv().speak(text, voice, waitMs, this::ttsSpeak);
+    }
+    /** Prepara as frases do treino. Progresso no evento 'voiceprep' {done,total,err}. */
+    @JavascriptInterface public int aiPrefetch(String json, String voice) {
+        return qv().prefetch(json, voice, (d, t, e) -> {
+            try { a.emit("voiceprep", new JSONObject().put("done", d).put("total", t).put("err", e == null ? "" : e).toString()); } catch (Exception ignored) { }
+        });
+    }
+    @JavascriptInterface public String aiVoiceInfo() {
+        try { return new JSONObject().put("bytes", qv().cacheBytes()).put("err", qv().lastError).toString(); } catch (Exception e) { return "{}"; }
+    }
+    @JavascriptInterface public void aiVoiceClear() { qv().clear(); }
 
     // ---------- reconhecimento de voz ----------
     @JavascriptInterface public void listen() {
